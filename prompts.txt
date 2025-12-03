@@ -1,0 +1,137 @@
+This is brand new nestjs project with typescript
+
+The first module that we needed to implement is Applicants
+
+<Context>
+On our landing page, there's an application form which customers will fill
+
+1. First Name
+2. Last Name
+3. Email
+4. Phone
+5. Organization
+6. Primary State
+7. Purpose
+8. Role intent (Join Agency or External)
+9. Status (Its out backend field, default Pending untill admin Accepted/Rejected them, won't come from frontend)
+</Context>
+
+Design a scalable module, as there will be others and many modules, ensure strict TypeScript and proper error handling with project error return structure, like this for example:
+/home/mohsin/Development/ai-agents/euphrates_voice_ai/eupherates_backend/src/app.module.ts
+
+We be using Amazon RDS PostgreSQL as our database
+create .env.example with required keys and I'll include it into .env file
+
+
+Next part of the stuff is setting up authentication:
+
+my cognito cdk setup looks like:
+
+this.userPool = new cognito.UserPool(this, "UserPool", {
+      selfSignUpEnabled: true,
+      signInAliases: { email: true },
+      autoVerify: { email: true },
+      passwordPolicy: {
+        minLength: 8,
+        requireLowercase: true,
+        requireUppercase: true,
+        requireDigits: true,
+        requireSymbols: false,
+      },
+      customAttributes: {
+        isAdmin: new cognito.StringAttribute({ mutable: true }),
+      },
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+right the fields will be:
+
+first Name
+last Name
+email
+password
+last Login
+status
+role (four roles as of now: agent/affiliate/admin/super-admin)
+Optional:
+    - Phone
+    - avatarUrl
+
+let's plan it before any implementation, how production setup works with cognito, do we need to create a user table on our database as well, or we manage all this fields on cognito?
+
+Great, I've updated Cognito with:
+this.userPool = new cognito.UserPool(this, "UserPool", {
+    selfSignUpEnabled: true,
+    signInAliases: { email: true },
+    autoVerify: { email: true },
+    passwordPolicy: {
+    minLength: 8,
+    requireLowercase: true,
+    requireUppercase: true,
+    requireDigits: true,
+    requireSymbols: false,
+    },
+    customAttributes: {
+    isAdmin: new cognito.StringAttribute({ mutable: true }),
+    role: new cognito.StringAttribute({ mutable: true })
+    },
+    removalPolicy: RemovalPolicy.DESTROY,
+});
+
+Now, let's proceed.
+
+
+Other points:
+
+Only admin or super-admin will be able to perform the following operations on Applicants entity
+
+findAll
+findOne
+findByStatus
+update
+updateStatus
+remove
+getStatistics
+
+I ran the endpoint:
+**Endpoint:** `PATCH /api/applicants/:id/status`
+
+**Authentication:** Required - Admin or Super-Admin only
+
+**Headers:**
+```
+Authorization: Bearer <accessToken>
+```
+
+**Request Body:**
+```json
+{
+  "status": "accepted"
+}
+```
+
+with super-admin token bearer auth token:
+
+receievd a response:
+{
+    "statusCode": 200,
+    "message": "Success",
+    "data": {
+        "id": "7b171963-b113-44b4-a8a9-c3b139950ef7",
+        "firstName": "John",
+        "lastName": "Doe",
+        "email": "john.doe@example.com",
+        "phone": "+1234567890",
+        "organization": "Acme Corp",
+        "primaryState": "California",
+        "purpose": "Looking to expand our agency services",
+        "roleIntent": "join_agency",
+        "status": "accepted",
+        "updatedById": null,
+        "createdAt": "2025-12-03T13:18:39.360Z",
+        "updatedAt": "2025-12-03T14:44:44.364Z"
+    },
+    "timestamp": "2025-12-03T19:44:45.154Z"
+}
+
+updatedById is null, it should be the admin who updated it
