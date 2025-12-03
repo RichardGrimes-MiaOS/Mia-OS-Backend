@@ -499,16 +499,3 @@ updateResource(@CurrentUser() user: User) {
 4. **Password Policy**: Enforced by Cognito - min 8 chars, uppercase, lowercase, number
 5. **Email Verification**: Required before first login
 6. **Rate Limiting**: Cognito automatically rate limits auth requests
-
----
-
-## Environment Variables Required
-
-```env
-AWS_REGION=us-east-1
-AWS_COGNITO_USER_POOL_ID=your-user-pool-id
-AWS_COGNITO_CLIENT_ID=your-client-id
-AWS_COGNITO_AUTHORITY=https://cognito-idp.{region}.amazonaws.com/{userPoolId}
-```
-
-Get these values from your AWS Cognito User Pool configuration.

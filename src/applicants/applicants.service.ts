@@ -10,12 +10,14 @@ import { Applicant, ApplicantStatus } from './entities/applicant.entity';
 import { CreateApplicantDto } from './dto/create-applicant.dto';
 import { UpdateApplicantDto } from './dto/update-applicant.dto';
 import { UpdateApplicantStatusDto } from './dto/update-applicant-status.dto';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class ApplicantsService {
   constructor(
     @InjectRepository(Applicant)
     private readonly applicantRepository: Repository<Applicant>,
+    private readonly emailService: EmailService,
   ) {}
 
   async create(createApplicantDto: CreateApplicantDto): Promise<Applicant> {
@@ -36,7 +38,28 @@ export class ApplicantsService {
         status: ApplicantStatus.PENDING,
       });
 
-      return await this.applicantRepository.save(applicant);
+      const savedApplicant = await this.applicantRepository.save(applicant);
+
+      // Send confirmation email asynchronously (don't wait for it)
+      this.emailService
+        .sendApplicationReceivedEmail({
+          email: savedApplicant.email,
+          firstName: savedApplicant.firstName,
+          lastName: savedApplicant.lastName,
+          organization: savedApplicant.organization,
+          primaryState: savedApplicant.primaryState,
+          submittedDate: savedApplicant.createdAt.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          }),
+        })
+        .catch((error) => {
+          // Log email error but don't fail the request
+          console.error('Failed to send application received email:', error);
+        });
+
+      return savedApplicant;
     } catch (error) {
       if (error instanceof ConflictException) {
         throw error;
