@@ -12,26 +12,20 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { ConfirmEmailDto } from './dto/confirm-email.dto';
-import { ResendConfirmationDto } from './dto/resend-confirmation.dto';
+import { CompleteNewPasswordDto } from './dto/complete-new-password.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
-import { UserRole } from '../users/entities/user.entity';
+import { CurrentUser } from './decorators/current-user.decorator';
+import { UserRole, User } from '../users/entities/user.entity';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-
-  @Post('signup')
-  @HttpCode(HttpStatus.CREATED)
-  signup(@Body() signupDto: SignupDto) {
-    return this.authService.signup(signupDto);
-  }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -82,15 +76,37 @@ export class AuthController {
     return this.authService.updateUserStatus(userId, status as any);
   }
 
-  @Post('confirm-email')
+  @Post('complete-new-password')
   @HttpCode(HttpStatus.OK)
-  confirmEmail(@Body() confirmEmailDto: ConfirmEmailDto) {
-    return this.authService.confirmEmail(confirmEmailDto);
+  completeNewPassword(@Body() completeNewPasswordDto: CompleteNewPasswordDto) {
+    return this.authService.completeNewPasswordChallenge(
+      completeNewPasswordDto.email,
+      completeNewPasswordDto.session,
+      completeNewPasswordDto.newPassword,
+    );
   }
 
-  @Post('resend-confirmation')
-  @HttpCode(HttpStatus.OK)
-  resendConfirmation(@Body() resendDto: ResendConfirmationDto) {
-    return this.authService.resendConfirmationCode(resendDto);
+  @Post('users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  @HttpCode(HttpStatus.CREATED)
+  async createUser(
+    @Body() createUserDto: CreateUserDto,
+    @CurrentUser() currentUser: User,
+  ) {
+    const result = await this.authService.createUser(
+      createUserDto.email,
+      createUserDto.firstName,
+      createUserDto.lastName,
+      createUserDto.phone,
+      createUserDto.role,
+      currentUser.id,
+    );
+
+    return {
+      user: result.user,
+      temporaryPassword: result.temporaryPassword,
+      message: 'User created successfully. Temporary password must be changed on first login.',
+    };
   }
 }

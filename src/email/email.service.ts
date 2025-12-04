@@ -12,6 +12,14 @@ export interface SendApplicationReceivedEmailDto {
   submittedDate: string;
 }
 
+export interface SendWelcomeEmailDto {
+  email: string;
+  firstName: string;
+  lastName: string;
+  temporaryPassword: string;
+  role?: string;
+}
+
 @Injectable()
 export class EmailService {
   private sesClient: SESClient;
@@ -154,6 +162,79 @@ If you have any questions, feel free to reply to this email. We're here to help!
 © ${new Date().getFullYear()} MIA. All rights reserved.
 
 You're receiving this email because you submitted an application on our website.
+    `.trim();
+  }
+
+  /**
+   * Send welcome email with temporary credentials
+   */
+  async sendWelcomeEmail(data: SendWelcomeEmailDto): Promise<void> {
+    try {
+      const htmlTemplate = this.loadEmailTemplate('welcome.html');
+      const htmlBody = this.replaceTemplateVariables(htmlTemplate, {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        temporaryPassword: data.temporaryPassword,
+        role: data.role || '',
+        currentYear: new Date().getFullYear().toString(),
+      });
+
+      const textBody = this.generateWelcomeTextVersion(data);
+
+      const command = new SendEmailCommand({
+        Source: this.fromEmail,
+        Destination: {
+          ToAddresses: [data.email],
+        },
+        Message: {
+          Subject: {
+            Data: 'Welcome to MIA - Your Account is Ready!',
+            Charset: 'UTF-8',
+          },
+          Body: {
+            Html: {
+              Data: htmlBody,
+              Charset: 'UTF-8',
+            },
+            Text: {
+              Data: textBody,
+              Charset: 'UTF-8',
+            },
+          },
+        },
+      });
+
+      await this.sesClient.send(command);
+      console.log(`Welcome email sent to ${data.email}`);
+    } catch (error) {
+      console.error('Failed to send welcome email via SES:', error);
+      // Don't throw error - log for monitoring
+    }
+  }
+
+  /**
+   * Generate plain text version of the welcome email
+   */
+  private generateWelcomeTextVersion(data: SendWelcomeEmailDto): string {
+    return `
+WELCOME TO MIA!
+
+Hi ${data.firstName},
+
+Your application has been approved! Your account has been created and you can now log in to start your onboarding process.
+
+YOUR LOGIN CREDENTIALS:
+Email: ${data.email}
+Temporary Password: ${data.temporaryPassword}
+
+IMPORTANT: You will be required to change this temporary password when you first log in. Please keep this email safe until you've completed your first login.
+
+Log in here: https://app.mia.com/login
+
+If you have any questions, please contact our support team at support@mia.com
+
+© ${new Date().getFullYear()} MIA. All rights reserved.
     `.trim();
   }
 

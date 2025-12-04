@@ -5,6 +5,8 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 
 export enum UserRole {
@@ -48,9 +50,9 @@ export class User {
   @Column({
     type: 'enum',
     enum: UserRole,
-    default: UserRole.AGENT,
+    nullable: true,
   })
-  role: UserRole;
+  role?: UserRole;
 
   @Column({
     type: 'enum',
@@ -61,6 +63,13 @@ export class User {
 
   @Column({ type: 'timestamp', nullable: true })
   lastLogin?: Date;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'createdById' })
+  createdBy?: User;
+
+  @Column({ type: 'uuid', nullable: true })
+  createdById?: string;
 
   @CreateDateColumn()
   createdAt: Date;

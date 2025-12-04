@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,13 +13,19 @@ import { CreateApplicantDto } from './dto/create-applicant.dto';
 import { UpdateApplicantDto } from './dto/update-applicant.dto';
 import { UpdateApplicantStatusDto } from './dto/update-applicant-status.dto';
 import { EmailService } from '../email/email.service';
+import { AuthService } from '../auth/auth.service';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class ApplicantsService {
   constructor(
     @InjectRepository(Applicant)
     private readonly applicantRepository: Repository<Applicant>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly emailService: EmailService,
+    @Inject(forwardRef(() => AuthService))
+    private readonly authService: AuthService,
   ) {}
 
   async create(createApplicantDto: CreateApplicantDto): Promise<Applicant> {
@@ -29,7 +37,18 @@ export class ApplicantsService {
 
       if (existingApplicant) {
         throw new ConflictException(
-          `Applicant with email ${createApplicantDto.email} already exists`,
+          `An application with email ${createApplicantDto.email} already exists`,
+        );
+      }
+
+      // Check if user with email already exists
+      const existingUser = await this.userRepository.findOne({
+        where: { email: createApplicantDto.email },
+      });
+
+      if (existingUser) {
+        throw new ConflictException(
+          `A user with email ${createApplicantDto.email} already exists`,
         );
       }
 
@@ -136,13 +155,81 @@ export class ApplicantsService {
   ): Promise<Applicant> {
     const applicant = await this.findOne(id);
 
+    const oldStatus = applicant.status;
     applicant.status = updateStatusDto.status;
     applicant.updatedById = updatedById;
 
     try {
-      return await this.applicantRepository.save(applicant);
+      // Save the status and updatedById first
+      const savedApplicant = await this.applicantRepository.save(applicant);
+
+      // If status changed to ACCEPTED, create user account
+      if (
+        oldStatus !== ApplicantStatus.ACCEPTED &&
+        updateStatusDto.status === ApplicantStatus.ACCEPTED
+      ) {
+        // Pass the saved applicant to ensure updatedById is persisted
+        await this.createUserFromApplicant(savedApplicant);
+      }
+
+      // Reload applicant with relations to return complete data
+      return await this.findOne(id);
     } catch (error) {
       throw new BadRequestException('Failed to update applicant status');
+    }
+  }
+
+  /**
+   * Create a user account from an approved applicant
+   */
+  private async createUserFromApplicant(applicant: Applicant): Promise<void> {
+    try {
+      // Create user with temporary password
+
+      const { user, temporaryPassword } = await this.authService.createUser(
+        applicant.email,
+        applicant.firstName,
+        applicant.lastName,
+        applicant.phone,
+        undefined, // Role will be set during onboarding
+        applicant.updatedById, // Track which admin approved/created the user
+      );
+
+      // Link applicant to created user - only update userId without overwriting other fields
+      await this.applicantRepository.update(applicant.id, {
+        userId: user.id,
+      });
+
+      console.log(
+        `[ApplicantsService] Linked applicant ${applicant.id} to user ${user.id}`,
+      );
+
+      // Send welcome email with temporary credentials
+      console.log(`[ApplicantsService] Sending welcome email to ${user.email}`);
+      this.emailService
+        .sendWelcomeEmail({
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          temporaryPassword,
+          role: user.role,
+        })
+        .catch((error) => {
+          console.error('Failed to send welcome email:', error);
+        });
+
+      console.log(
+        `[ApplicantsService] Successfully completed user creation for applicant ${applicant.id}`,
+      );
+    } catch (error) {
+      console.error(
+        `[ApplicantsService] Failed to create user from applicant ${applicant.id}:`,
+      );
+      console.error(`Error name: ${error.name}`);
+      console.error(`Error message: ${error.message}`);
+      console.error(`Full error:`, error);
+      // Don't throw - we don't want to fail the status update if user creation fails
+      // Admin can manually retry or create the user
     }
   }
 

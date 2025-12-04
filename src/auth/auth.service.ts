@@ -19,6 +19,8 @@ import {
   GetUserCommand,
   ConfirmSignUpCommand,
   ResendConfirmationCodeCommand,
+  AdminCreateUserCommand,
+  RespondToAuthChallengeCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { SignupDto } from './dto/signup.dto';
@@ -69,7 +71,7 @@ export class AuthService {
           { Name: 'given_name', Value: firstName },
           { Name: 'family_name', Value: lastName },
           ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
-          { Name: 'custom:role', Value: role || UserRole.AGENT },
+          ...(role ? [{ Name: 'custom:role', Value: role }] : []),
         ],
       });
 
@@ -86,7 +88,7 @@ export class AuthService {
         firstName,
         lastName,
         phone,
-        role: role || UserRole.AGENT,
+        ...(role && { role }),
         status: UserStatus.ACTIVE,
       });
 
@@ -123,12 +125,19 @@ export class AuthService {
     }
   }
 
-  async login(loginDto: LoginDto): Promise<{
-    accessToken: string;
-    idToken: string;
-    refreshToken: string;
-    expiresIn: number;
-  }> {
+  async login(loginDto: LoginDto): Promise<
+    | {
+        accessToken: string;
+        idToken: string;
+        refreshToken: string;
+        expiresIn: number;
+      }
+    | {
+        challengeName: string;
+        session: string;
+        message: string;
+      }
+  > {
     const { email, password } = loginDto;
 
     try {
@@ -143,8 +152,32 @@ export class AuthService {
 
       const authResponse = await this.cognitoClient.send(authCommand);
 
+      // Check if user needs to change password (first login with temp password)
+      if (authResponse.ChallengeName === 'NEW_PASSWORD_REQUIRED') {
+        return {
+          challengeName: authResponse.ChallengeName,
+          session: authResponse.Session!,
+          message: 'Please set a new password',
+        };
+      }
+
       if (!authResponse.AuthenticationResult) {
         throw new UnauthorizedException('Invalid credentials');
+      }
+
+      // Update lastLogin timestamp in database
+      try {
+        const user = await this.userRepository.findOne({
+          where: { email },
+        });
+
+        if (user) {
+          user.lastLogin = new Date();
+          await this.userRepository.save(user);
+        }
+      } catch (dbError) {
+        // Log error but don't fail the login
+        console.error('Failed to update lastLogin:', dbError);
       }
 
       return {
@@ -353,5 +386,195 @@ export class AuthService {
       console.error('Cognito resend code error:', error);
       throw new InternalServerErrorException(`Failed to resend code: ${error.message || 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Create a user with a temporary password (for admin-created users)
+   * Email is auto-verified and user must change password on first login
+   */
+  async createUser(
+    email: string,
+    firstName: string,
+    lastName: string,
+    phone: string | undefined,
+    role: UserRole | undefined,
+    createdById?: string,
+  ): Promise<{ user: User; temporaryPassword: string }> {
+    try {
+      // Check if user already exists in database
+      const existingUser = await this.userRepository.findOne({
+        where: { email },
+      });
+
+      if (existingUser) {
+        throw new ConflictException('User with this email already exists');
+      }
+
+      // Generate secure temporary password
+      const temporaryPassword = this.generateTemporaryPassword();
+
+      // Create user in Cognito with AdminCreateUser
+      const createUserCommand = new AdminCreateUserCommand({
+        UserPoolId: this.userPoolId,
+        Username: email,
+        TemporaryPassword: temporaryPassword,
+        UserAttributes: [
+          { Name: 'email', Value: email },
+          { Name: 'email_verified', Value: 'true' }, // Auto-verify email
+          { Name: 'given_name', Value: firstName },
+          { Name: 'family_name', Value: lastName },
+          ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
+          ...(role ? [{ Name: 'custom:role', Value: role }] : []),
+        ],
+        MessageAction: 'SUPPRESS', // Don't send Cognito's default email
+      });
+
+      const createUserResponse = await this.cognitoClient.send(createUserCommand);
+
+      if (!createUserResponse.User?.Username) {
+        throw new InternalServerErrorException('Failed to create user in Cognito');
+      }
+
+      // Get the Cognito Sub from the user attributes
+      const cognitoSub = createUserResponse.User.Attributes?.find(
+        (attr) => attr.Name === 'sub',
+      )?.Value;
+
+      if (!cognitoSub) {
+        throw new InternalServerErrorException('Failed to retrieve Cognito Sub');
+      }
+
+      // Create user record in database
+      const user = this.userRepository.create({
+        cognitoSub,
+        email,
+        firstName,
+        lastName,
+        phone,
+        ...(role && { role }),
+        status: UserStatus.ACTIVE,
+        createdById,
+      });
+
+      await this.userRepository.save(user);
+
+      return {
+        user,
+        temporaryPassword,
+      };
+    } catch (error: any) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+
+      if (error.name === 'UsernameExistsException') {
+        throw new ConflictException('User with this email already exists in Cognito');
+      }
+
+      if (error.name === 'InvalidPasswordException') {
+        throw new BadRequestException('Password does not meet requirements');
+      }
+
+      if (error.name === 'InvalidParameterException') {
+        throw new BadRequestException(`Invalid parameter: ${error.message}`);
+      }
+
+      console.error('Cognito create user error:', error);
+      throw new InternalServerErrorException(`Failed to create user: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Complete the NEW_PASSWORD_REQUIRED challenge on first login
+   */
+  async completeNewPasswordChallenge(
+    email: string,
+    session: string,
+    newPassword: string,
+  ): Promise<{
+    accessToken: string;
+    idToken: string;
+    refreshToken: string;
+    expiresIn: number;
+  }> {
+    try {
+      const respondCommand = new RespondToAuthChallengeCommand({
+        ClientId: this.clientId,
+        ChallengeName: 'NEW_PASSWORD_REQUIRED',
+        Session: session,
+        ChallengeResponses: {
+          USERNAME: email,
+          NEW_PASSWORD: newPassword,
+        },
+      });
+
+      const response = await this.cognitoClient.send(respondCommand);
+
+      if (!response.AuthenticationResult) {
+        throw new UnauthorizedException('Failed to complete password change');
+      }
+
+      // Update lastLogin timestamp in database
+      try {
+        const user = await this.userRepository.findOne({
+          where: { email },
+        });
+
+        if (user) {
+          user.lastLogin = new Date();
+          await this.userRepository.save(user);
+        }
+      } catch (dbError) {
+        // Log error but don't fail the login
+        console.error('Failed to update lastLogin:', dbError);
+      }
+
+      return {
+        accessToken: response.AuthenticationResult.AccessToken!,
+        idToken: response.AuthenticationResult.IdToken!,
+        refreshToken: response.AuthenticationResult.RefreshToken!,
+        expiresIn: response.AuthenticationResult.ExpiresIn!,
+      };
+    } catch (error: any) {
+      if (error.name === 'InvalidPasswordException') {
+        throw new BadRequestException('New password does not meet requirements');
+      }
+
+      if (error.name === 'NotAuthorizedException') {
+        throw new UnauthorizedException('Invalid session or credentials');
+      }
+
+      console.error('Complete new password error:', error);
+      throw new InternalServerErrorException('Failed to set new password');
+    }
+  }
+
+  /**
+   * Generate a secure temporary password that meets Cognito requirements
+   */
+  private generateTemporaryPassword(): string {
+    const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // Removed I, O for clarity
+    const lowercase = 'abcdefghijkmnopqrstuvwxyz'; // Removed l for clarity
+    const numbers = '23456789'; // Removed 0, 1 for clarity
+    const symbols = '!@#$%^&*';
+
+    // Ensure at least one of each type
+    let password = '';
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+    password += symbols[Math.floor(Math.random() * symbols.length)];
+
+    // Fill the rest randomly (total 12 characters)
+    const allChars = uppercase + lowercase + numbers + symbols;
+    for (let i = password.length; i < 12; i++) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+
+    // Shuffle the password
+    return password
+      .split('')
+      .sort(() => Math.random() - 0.5)
+      .join('');
   }
 }

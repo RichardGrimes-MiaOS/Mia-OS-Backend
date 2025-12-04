@@ -1,7 +1,11 @@
 # Authentication API Documentation
 
 ## Overview
-The Authentication module handles user registration, login, and authorization using AWS Cognito and JWT tokens. User data is stored in both Cognito (for authentication) and PostgreSQL (for application data and relationships).
+The Authentication module handles user authentication and authorization using AWS Cognito and JWT tokens. User data is stored in both Cognito (for authentication) and PostgreSQL (for application data and relationships).
+
+**Important**: There is no public sign-up endpoint. All users are created either by:
+1. **Applicants**: When an admin approves an applicant, a user account is automatically created
+2. **Admins**: Super-admins can manually create admin users via the API
 
 ## Base URL
 ```
@@ -9,65 +13,21 @@ http://localhost:4000/api/auth
 ```
 
 ## Architecture
-- **Authentication**: AWS Cognito handles password management, email verification, and token generation
+- **Authentication**: AWS Cognito handles password management and token generation
 - **Database**: PostgreSQL stores user profiles and relationships with other entities
 - **Tokens**: JWT tokens are issued by Cognito and validated on each request
+- **User Creation**: Uses `AdminCreateUser` with temporary passwords that must be changed on first login
 
 ## User Roles
-- `agent` - Default role for agents
+- `agent` - Default role for approved applicants (can be changed during onboarding)
 - `affiliate` - For affiliate partners
 - `admin` - Administrator with elevated permissions
 - `super-admin` - Super administrator with full access
 
 ## Endpoints
 
-### 1. Sign Up (Register)
-Create a new user account in both Cognito and the database.
-
-**Endpoint:** `POST /api/auth/signup`
-
-**Request Body:**
-```json
-{
-  "firstName": "John",
-  "lastName": "Doe",
-  "email": "john.doe@example.com",
-  "password": "Password123",
-  "phone": "+1234567890",
-  "role": "agent"
-}
-```
-
-**Field Requirements:**
-- `firstName`: Required, max 100 characters
-- `lastName`: Required, max 100 characters
-- `email`: Required, valid email format
-- `password`: Required, min 8 characters, must contain uppercase, lowercase, and number
-- `phone`: Optional, valid phone format
-- `role`: Optional, defaults to `agent`
-
-**Response:** `201 Created`
-```json
-{
-  "statusCode": 201,
-  "message": "Success",
-  "data": {
-    "message": "User registered successfully. Please check your email to verify your account.",
-    "userSub": "cognito-user-sub-uuid"
-  },
-  "timestamp": "2025-12-03T10:00:00.000Z"
-}
-```
-
-**Notes:**
-- User must verify email before logging in
-- Cognito sends verification email automatically
-- User record is created in both Cognito and database
-
----
-
-### 2. Login
-Authenticate user and receive access tokens.
+### 1. Login
+Authenticate user and receive access tokens. On first login with temporary password, returns a challenge to set a new password.
 
 **Endpoint:** `POST /api/auth/login`
 
@@ -75,9 +35,65 @@ Authenticate user and receive access tokens.
 ```json
 {
   "email": "john.doe@example.com",
-  "password": "Password123"
+  "password": "TempPassword123"
 }
 ```
+
+**Response (Normal Login):** `200 OK`
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": {
+    "accessToken": "eyJraWQiOiJxxx...",
+    "idToken": "eyJraWQiOiJxxx...",
+    "refreshToken": "eyJjdHkiOiJKV1Q...",
+    "expiresIn": 3600
+  },
+  "timestamp": "2025-12-04T10:00:00.000Z"
+}
+```
+
+**Response (First Login - Password Change Required):** `200 OK`
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": {
+    "challengeName": "NEW_PASSWORD_REQUIRED",
+    "session": "AWSCognitoSessionToken...",
+    "message": "Please set a new password"
+  },
+  "timestamp": "2025-12-04T10:00:00.000Z"
+}
+```
+
+**Token Details:**
+- `accessToken`: Use this in the `Authorization` header for API requests
+- `idToken`: Contains user claims (email, name, etc.)
+- `refreshToken`: Use to get new access tokens when expired
+- `expiresIn`: Token expiration time in seconds (typically 3600 = 1 hour)
+
+---
+
+### 2. Complete New Password Challenge
+Complete the password change requirement on first login with temporary password.
+
+**Endpoint:** `POST /api/auth/complete-new-password`
+
+**Request Body:**
+```json
+{
+  "email": "john.doe@example.com",
+  "session": "AWSCognitoSessionToken...",
+  "newPassword": "MyNewSecurePassword123!"
+}
+```
+
+**Field Requirements:**
+- `email`: Required, valid email format
+- `session`: Required, session token from login response
+- `newPassword`: Required, min 8 characters, must contain uppercase, lowercase, and number
 
 **Response:** `200 OK`
 ```json
@@ -90,15 +106,27 @@ Authenticate user and receive access tokens.
     "refreshToken": "eyJjdHkiOiJKV1Q...",
     "expiresIn": 3600
   },
-  "timestamp": "2025-12-03T10:00:00.000Z"
+  "timestamp": "2025-12-04T10:00:00.000Z"
 }
 ```
 
-**Token Details:**
-- `accessToken`: Use this in the `Authorization` header for API requests
-- `idToken`: Contains user claims (email, name, etc.)
-- `refreshToken`: Use to get new access tokens when expired
-- `expiresIn`: Token expiration time in seconds (typically 3600 = 1 hour)
+**Error Responses:**
+
+**400 Bad Request - Invalid Password**
+```json
+{
+  "statusCode": 400,
+  "message": "New password does not meet requirements"
+}
+```
+
+**401 Unauthorized - Invalid Session**
+```json
+{
+  "statusCode": 401,
+  "message": "Invalid session or credentials"
+}
+```
 
 ---
 
@@ -124,7 +152,7 @@ Get new access tokens using a refresh token.
     "idToken": "eyJraWQiOiJxxx...",
     "expiresIn": 3600
   },
-  "timestamp": "2025-12-03T10:00:00.000Z"
+  "timestamp": "2025-12-04T10:00:00.000Z"
 }
 ```
 
@@ -155,11 +183,16 @@ Authorization: Bearer <accessToken>
     "avatarUrl": null,
     "role": "agent",
     "status": "active",
-    "lastLogin": "2025-12-03T10:00:00.000Z",
-    "createdAt": "2025-12-03T09:00:00.000Z",
-    "updatedAt": "2025-12-03T10:00:00.000Z"
+    "lastLogin": "2025-12-04T10:00:00.000Z",
+    "createdBy": {
+      "id": "admin-uuid",
+      "firstName": "Admin",
+      "lastName": "User"
+    },
+    "createdAt": "2025-12-04T09:00:00.000Z",
+    "updatedAt": "2025-12-04T10:00:00.000Z"
   },
-  "timestamp": "2025-12-03T10:00:00.000Z"
+  "timestamp": "2025-12-04T10:00:00.000Z"
 }
 ```
 
@@ -178,7 +211,7 @@ Authorization: Bearer <accessToken>
 **Request Body:**
 ```json
 {
-  "oldPassword": "Password123",
+  "oldPassword": "CurrentPassword123",
   "newPassword": "NewPassword456"
 }
 ```
@@ -191,125 +224,78 @@ Authorization: Bearer <accessToken>
   "data": {
     "message": "Password changed successfully"
   },
-  "timestamp": "2025-12-03T10:00:00.000Z"
+  "timestamp": "2025-12-04T10:00:00.000Z"
 }
 ```
 
 ---
 
-### 6. Confirm Email
-Verify user's email address using the confirmation code sent by Cognito.
+### 6. Create User (Super Admin Only)
+Create a new admin user. User receives an email with temporary credentials and must change password on first login.
 
-**Endpoint:** `POST /api/auth/confirm-email`
+**Endpoint:** `POST /api/auth/users`
+
+**Headers:**
+```
+Authorization: Bearer <accessToken>
+```
 
 **Request Body:**
 ```json
 {
-  "email": "john.doe@example.com",
-  "code": "123456"
+  "firstName": "Jane",
+  "lastName": "Smith",
+  "email": "jane.smith@example.com",
+  "phone": "+1234567890",
+  "role": "admin"
 }
 ```
 
 **Field Requirements:**
+- `firstName`: Required, max 100 characters
+- `lastName`: Required, max 100 characters
 - `email`: Required, valid email format
-- `code`: Required, 6-digit confirmation code from email
+- `phone`: Optional, valid phone format
+- `role`: Required, one of: `admin`, `super-admin`
 
-**Response:** `200 OK`
+**Response:** `201 Created`
 ```json
 {
-  "statusCode": 200,
+  "statusCode": 201,
   "message": "Success",
   "data": {
-    "message": "Email verified successfully. You can now log in."
+    "user": {
+      "id": "uuid",
+      "cognitoSub": "cognito-user-sub",
+      "email": "jane.smith@example.com",
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "phone": "+1234567890",
+      "role": "admin",
+      "status": "active",
+      "createdById": "super-admin-uuid",
+      "createdAt": "2025-12-04T10:00:00.000Z",
+      "updatedAt": "2025-12-04T10:00:00.000Z"
+    },
+    "temporaryPassword": "TempPass123!",
+    "message": "User created successfully. Temporary password must be changed on first login."
   },
-  "timestamp": "2025-12-03T10:00:00.000Z"
+  "timestamp": "2025-12-04T10:00:00.000Z"
 }
 ```
 
-**Error Responses:**
+**Notes:**
+- User's email is automatically verified
+- Temporary password is sent via email to the user
+- User must change password on first login
+- `createdById` tracks which super-admin created the user
 
-**400 Bad Request - Invalid Code**
-```json
-{
-  "statusCode": 400,
-  "message": "Invalid verification code"
-}
-```
-
-**400 Bad Request - Expired Code**
-```json
-{
-  "statusCode": 400,
-  "message": "Verification code has expired. Please request a new one."
-}
-```
-
-**400 Bad Request - Already Confirmed**
-```json
-{
-  "statusCode": 400,
-  "message": "User is already confirmed"
-}
-```
+**Access Control:**
+- **Only users with `super-admin` role can access this endpoint**
 
 ---
 
-### 7. Resend Confirmation Code
-Request a new verification code if the original has expired.
-
-**Endpoint:** `POST /api/auth/resend-confirmation`
-
-**Request Body:**
-```json
-{
-  "email": "john.doe@example.com"
-}
-```
-
-**Field Requirements:**
-- `email`: Required, valid email format
-
-**Response:** `200 OK`
-```json
-{
-  "statusCode": 200,
-  "message": "Success",
-  "data": {
-    "message": "Verification code sent to your email."
-  },
-  "timestamp": "2025-12-03T10:00:00.000Z"
-}
-```
-
-**Error Responses:**
-
-**400 Bad Request - User Not Found**
-```json
-{
-  "statusCode": 400,
-  "message": "User not found"
-}
-```
-
-**400 Bad Request - Already Confirmed**
-```json
-{
-  "statusCode": 400,
-  "message": "User is already confirmed"
-}
-```
-
-**400 Bad Request - Rate Limited**
-```json
-{
-  "statusCode": 400,
-  "message": "Too many requests. Please try again later."
-}
-```
-
----
-
-### 8. Update User Role (Super Admin Only)
+### 7. Update User Role (Super Admin Only)
 Update a user's role. Requires super-admin privileges.
 
 **Endpoint:** `PATCH /api/auth/users/:id/role`
@@ -348,7 +334,7 @@ Authorization: Bearer <accessToken>
     "role": "admin",
     ...
   },
-  "timestamp": "2025-12-03T10:00:00.000Z"
+  "timestamp": "2025-12-04T10:00:00.000Z"
 }
 ```
 
@@ -357,7 +343,7 @@ Authorization: Bearer <accessToken>
 
 ---
 
-### 9. Update User Status (Admin Only)
+### 8. Update User Status (Admin Only)
 Update a user's account status.
 
 **Endpoint:** `PATCH /api/auth/users/:id/status`
@@ -393,7 +379,7 @@ Authorization: Bearer <accessToken>
     "status": "suspended",
     ...
   },
-  "timestamp": "2025-12-03T10:00:00.000Z"
+  "timestamp": "2025-12-04T10:00:00.000Z"
 }
 ```
 
@@ -404,16 +390,23 @@ Authorization: Bearer <accessToken>
 
 ## Authentication Flow
 
-### First Time User
-1. User signs up via `POST /api/auth/signup`
-2. Cognito creates auth user and sends verification email
-3. Database creates user profile record
-4. User receives verification code in email
-5. User verifies email via `POST /api/auth/confirm-email` with code
-   - If code expires, user can request a new one via `POST /api/auth/resend-confirmation`
-6. User logs in via `POST /api/auth/login`
-7. User receives access and refresh tokens
-8. User includes `Authorization: Bearer <accessToken>` in subsequent requests
+### For Approved Applicants (Agents/Affiliates)
+1. User submits application via `POST /api/applicants`
+2. Admin reviews and approves via `PATCH /api/applicants/:id/status`
+3. System automatically creates user account with temporary password
+4. User receives welcome email with credentials
+5. User logs in via `POST /api/auth/login` with temporary password
+6. System returns `NEW_PASSWORD_REQUIRED` challenge
+7. User sets new password via `POST /api/auth/complete-new-password`
+8. User receives access and refresh tokens
+9. User completes onboarding flow (role determined during onboarding)
+10. User includes `Authorization: Bearer <accessToken>` in subsequent requests
+
+### For Admin Users
+1. Super-admin creates admin via `POST /api/auth/users`
+2. System creates account with temporary password
+3. New admin receives welcome email with credentials
+4. Same login flow as above (steps 5-10)
 
 ### Existing User
 1. User logs in via `POST /api/auth/login`
@@ -430,7 +423,7 @@ All errors follow this format:
 ```json
 {
   "statusCode": 400,
-  "timestamp": "2025-12-03T10:00:00.000Z",
+  "timestamp": "2025-12-04T10:00:00.000Z",
   "path": "/api/auth/login",
   "method": "POST",
   "message": {
@@ -450,7 +443,6 @@ All errors follow this format:
 **401 Unauthorized**
 - Invalid credentials
 - Invalid or expired token
-- Email not verified
 
 **403 Forbidden**
 - Insufficient permissions (not admin/super-admin)
@@ -493,9 +485,21 @@ updateResource(@CurrentUser() user: User) {
 
 ## Security Notes
 
-1. **Token Storage**: Store tokens securely on the client (HttpOnly cookies recommended)
-2. **HTTPS**: Always use HTTPS in production
-3. **Token Expiry**: Access tokens expire in 1 hour, use refresh tokens to get new ones
-4. **Password Policy**: Enforced by Cognito - min 8 chars, uppercase, lowercase, number
-5. **Email Verification**: Required before first login
-6. **Rate Limiting**: Cognito automatically rate limits auth requests
+1. **No Public Sign-Up**: All users are created through admin approval or super-admin action
+2. **Email Auto-Verified**: Admin-created users have email automatically verified
+3. **Temporary Passwords**: All new users receive temporary passwords that must be changed
+4. **Token Storage**: Store tokens securely on the client (HttpOnly cookies recommended)
+5. **HTTPS**: Always use HTTPS in production
+6. **Token Expiry**: Access tokens expire in 1 hour, use refresh tokens to get new ones
+7. **Password Policy**: Enforced by Cognito - min 8 chars, uppercase, lowercase, number
+8. **Audit Trail**: `createdById` field tracks which super-admin created each admin user
+9. **Rate Limiting**: Cognito automatically rate limits auth requests
+
+---
+
+## Removed Endpoints
+
+The following endpoints have been removed as they are no longer needed:
+- `POST /api/auth/signup` - No public sign-up allowed
+- `POST /api/auth/confirm-email` - Email automatically verified for admin-created users
+- `POST /api/auth/resend-confirmation` - Not needed without email confirmation flow

@@ -66,6 +66,13 @@ export class Applicant {
   @Column({ type: 'uuid', nullable: true })
   updatedById?: string;
 
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'userId' })
+  user?: User;
+
+  @Column({ type: 'uuid', nullable: true })
+  userId?: string;
+
   @CreateDateColumn()
   createdAt: Date;
 
