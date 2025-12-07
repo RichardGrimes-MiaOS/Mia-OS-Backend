@@ -12,6 +12,7 @@ import { User } from './users/entities/user.entity';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     }),
     AuthModule,
     ApplicantsModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [

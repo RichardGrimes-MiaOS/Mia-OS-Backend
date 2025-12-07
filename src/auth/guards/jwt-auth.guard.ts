@@ -15,9 +15,16 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       context.getClass(),
     ]);
 
+    console.log('[JwtAuthGuard] Is public route:', isPublic);
+
     if (isPublic) {
+      console.log('[JwtAuthGuard] Public route, skipping auth');
       return true;
     }
+
+    const request = context.switchToHttp().getRequest();
+    const authHeader = request.headers.authorization;
+    console.log('[JwtAuthGuard] Authorization header:', authHeader ? `Bearer ${authHeader.substring(0, 20)}...` : 'NOT PRESENT');
 
     return super.canActivate(context);
   }

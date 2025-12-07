@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mia-crm-backend
+    ports:
+      - '4000:4000'
+    environment:
+      # Database
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=mia_crm
+
+      # Application
+      - NODE_ENV=development
+      - PORT=4000
+
+      # AWS Cognito - Set these via task definition in ECS
+      # - AWS_REGION=us-east-2
+      # - COGNITO_USER_POOL_ID=
+      # - COGNITO_CLIENT_ID=
+      # - COGNITO_CLIENT_SECRET=
+
+      # AWS SES - Set these via task definition in ECS
+      # - SES_FROM_EMAIL=
+      # - AWS_ACCESS_KEY_ID=
+      # - AWS_SECRET_ACCESS_KEY=
+
+      # JWT
+      # - JWT_SECRET=
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mia-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: mia-crm-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=mia_crm
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mia-network
+    restart: unless-stopped
+
+networks:
+  mia-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
