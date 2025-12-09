@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Activation Request</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+        }
+        .content {
+            background: #ffffff;
+            padding: 30px;
+            border: 1px solid #e0e0e0;
+            border-top: none;
+        }
+        .info-box {
+            background: #f8f9fa;
+            padding: 20px;
+            border-left: 4px solid #667eea;
+            margin: 20px 0;
+        }
+        .info-row {
+            margin: 10px 0;
+        }
+        .label {
+            font-weight: bold;
+            color: #667eea;
+            display: inline-block;
+            width: 150px;
+        }
+        .button {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎓 Agent Activation Request</h1>
+    </div>
+    <div class="content">
+        <p>Hi Richard,</p>
+
+        <p>A new agent has completed their onboarding requirements and is ready for activation!</p>
+
+        <div class="info-box">
+            <h3>Agent Information</h3>
+            <div class="info-row">
+                <span class="label">Name:</span>
+                <span>{{firstName}} {{lastName}}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">Email:</span>
+                <span>{{email}}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">Phone:</span>
+                <span>{{phone}}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">User ID:</span>
+                <span>{{userId}}</span>
+            </div>
+        </div>
+
+        <div class="info-box">
+            <h3>Completed Steps</h3>
+            <ul>
+                <li>✅ Pre-licensing Training Registered</li>
+                <li>✅ Licensing Exam Passed</li>
+                <li>✅ E&O Insurance Uploaded</li>
+            </ul>
+        </div>
+
+        <p>Please review the agent's information in the admin portal and approve for activation.</p>
+
+        <div style="text-align: center;">
+            <a href="{{adminPortalUrl}}" class="button">Review in Admin Portal</a>
+        </div>
+
+        <p style="margin-top: 30px; color: #666; font-size: 14px;">
+            This is an automated notification from the MIA CRM system.
+        </p>
+    </div>
+    <div class="footer">
+        <p>© {{currentYear}} Make Income Anywhere. All rights reserved.</p>
+    </div>
+</body>
+</html>

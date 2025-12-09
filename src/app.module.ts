@@ -9,10 +9,15 @@ import { ApplicantsModule } from './applicants/applicants.module';
 import { AuthModule } from './auth/auth.module';
 import { Applicant } from './applicants/entities/applicant.entity';
 import { User } from './users/entities/user.entity';
+import { LicensingTraining } from './onboarding/entities/licensing-training.entity';
+import { LicensingExam } from './onboarding/entities/licensing-exam.entity';
+import { EAndOInsurance } from './onboarding/entities/e-and-o-insurance.entity';
+import { ActivationRequest } from './onboarding/entities/activation-request.entity';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { HealthModule } from './health/health.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -27,7 +32,14 @@ import { HealthModule } from './health/health.module';
       username: process.env.DB_USERNAME,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
-      entities: [Applicant, User],
+      entities: [
+        Applicant,
+        User,
+        LicensingTraining,
+        LicensingExam,
+        EAndOInsurance,
+        ActivationRequest,
+      ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
       // ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
@@ -36,6 +48,7 @@ import { HealthModule } from './health/health.module';
     AuthModule,
     ApplicantsModule,
     HealthModule,
+    OnboardingModule,
   ],
   controllers: [AppController],
   providers: [

@@ -14,7 +14,7 @@ import { UpdateApplicantDto } from './dto/update-applicant.dto';
 import { UpdateApplicantStatusDto } from './dto/update-applicant-status.dto';
 import { EmailService } from '../email/email.service';
 import { AuthService } from '../auth/auth.service';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 
 @Injectable()
 export class ApplicantsService {
@@ -94,14 +94,60 @@ export class ApplicantsService {
     });
   }
 
-  async findOne(id: string): Promise<Applicant> {
+  async findOne(id: string): Promise<any> {
     const applicant = await this.applicantRepository.findOne({
       where: { id },
-      relations: ['updatedBy'],
+      relations: ['updatedBy', 'user'],
     });
 
     if (!applicant) {
       throw new NotFoundException(`Applicant with ID ${id} not found`);
+    }
+
+    // If applicant has a linked user account, fetch their onboarding data
+    if (applicant.userId) {
+      const [licensingTraining, licensingExam, eAndOInsurance] =
+        await Promise.all([
+          this.userRepository.query(
+            `SELECT * FROM licensing_training WHERE "userId" = $1`,
+            [applicant.userId],
+          ),
+          this.userRepository.query(
+            `SELECT * FROM licensing_exam WHERE "userId" = $1`,
+            [applicant.userId],
+          ),
+          this.userRepository.query(
+            `SELECT * FROM e_and_o_insurance WHERE "userId" = $1 ORDER BY "createdAt" DESC`,
+            [applicant.userId],
+          ),
+        ]);
+
+      // Convert entity to plain object to preserve custom properties
+      const plainApplicant = {
+        id: applicant.id,
+        firstName: applicant.firstName,
+        lastName: applicant.lastName,
+        email: applicant.email,
+        phone: applicant.phone,
+        organization: applicant.organization,
+        primaryState: applicant.primaryState,
+        purpose: applicant.purpose,
+        roleIntent: applicant.roleIntent,
+        status: applicant.status,
+        updatedBy: applicant.updatedBy,
+        updatedById: applicant.updatedById,
+        user: applicant.user,
+        userId: applicant.userId,
+        createdAt: applicant.createdAt,
+        updatedAt: applicant.updatedAt,
+        onboardingData: {
+          licensingTraining: licensingTraining[0] || null,
+          licensingExam: licensingExam[0] || null,
+          eAndOInsurance: eAndOInsurance || [],
+        },
+      };
+
+      return plainApplicant;
     }
 
     return applicant;
@@ -191,9 +237,10 @@ export class ApplicantsService {
         applicant.firstName,
         applicant.lastName,
         applicant.phone,
-        undefined, // Role will be set during onboarding
+        UserRole.APPLICANT, // Start as applicant, will be promoted to agent after onboarding
         applicant.updatedById, // Track which admin approved/created the user
       );
+      console.log(temporaryPassword);
 
       // Link applicant to created user - only update userId without overwriting other fields
       await this.applicantRepository.update(applicant.id, {

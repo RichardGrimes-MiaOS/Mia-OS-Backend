@@ -20,6 +20,14 @@ export interface SendWelcomeEmailDto {
   role?: string;
 }
 
+export interface SendActivationEmailDto {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  userId: string;
+}
+
 @Injectable()
 export class EmailService {
   private sesClient: SESClient;
@@ -235,6 +243,96 @@ Log in here: https://app.mia.com/login
 If you have any questions, please contact our support team at support@mia.com
 
 © ${new Date().getFullYear()} MIA. All rights reserved.
+    `.trim();
+  }
+
+  /**
+   * Send activation request email to Richard
+   */
+  async sendActivationEmail(
+    data: SendActivationEmailDto,
+    recipientEmail: string,
+  ): Promise<void> {
+    try {
+      const htmlTemplate = this.loadEmailTemplate('activation-request.html');
+      const adminPortalUrl =
+        process.env.ADMIN_PORTAL_URL || 'https://admin.makeincomeanywhere.com';
+
+      const htmlBody = this.replaceTemplateVariables(htmlTemplate, {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        phone: data.phone || 'N/A',
+        userId: data.userId,
+        adminPortalUrl,
+        currentYear: new Date().getFullYear().toString(),
+      });
+
+      const textBody = this.generateActivationTextVersion(data, adminPortalUrl);
+
+      const command = new SendEmailCommand({
+        Source: this.fromEmail,
+        Destination: {
+          ToAddresses: [recipientEmail],
+        },
+        Message: {
+          Subject: {
+            Data: `Agent Activation Request - ${data.firstName} ${data.lastName}`,
+            Charset: 'UTF-8',
+          },
+          Body: {
+            Html: {
+              Data: htmlBody,
+              Charset: 'UTF-8',
+            },
+            Text: {
+              Data: textBody,
+              Charset: 'UTF-8',
+            },
+          },
+        },
+      });
+
+      await this.sesClient.send(command);
+      console.log(`Activation email sent to ${recipientEmail} for user ${data.userId}`);
+    } catch (error) {
+      console.error('Failed to send activation email via SES:', error);
+      // Don't throw error - log for monitoring
+    }
+  }
+
+  /**
+   * Generate plain text version of the activation email
+   */
+  private generateActivationTextVersion(
+    data: SendActivationEmailDto,
+    adminPortalUrl: string,
+  ): string {
+    return `
+AGENT ACTIVATION REQUEST
+
+Hi Richard,
+
+A new agent has completed their onboarding requirements and is ready for activation!
+
+AGENT INFORMATION:
+- Name: ${data.firstName} ${data.lastName}
+- Email: ${data.email}
+- Phone: ${data.phone || 'N/A'}
+- User ID: ${data.userId}
+
+COMPLETED STEPS:
+✅ Pre-licensing Training Registered
+✅ Licensing Exam Passed
+✅ E&O Insurance Uploaded
+
+Please review the agent's information in the admin portal and approve for activation.
+
+Review in Admin Portal: ${adminPortalUrl}
+
+This is an automated notification from the MIA CRM system.
+
+© ${new Date().getFullYear()} Make Income Anywhere. All rights reserved.
     `.trim();
   }
 

@@ -397,7 +397,7 @@ export class AuthService {
     firstName: string,
     lastName: string,
     phone: string | undefined,
-    role: UserRole | undefined,
+    role: UserRole,
     createdById?: string,
   ): Promise<{ user: User; temporaryPassword: string }> {
     try {
@@ -424,7 +424,7 @@ export class AuthService {
           { Name: 'given_name', Value: firstName },
           { Name: 'family_name', Value: lastName },
           ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
-          ...(role ? [{ Name: 'custom:role', Value: role }] : []),
+          { Name: 'custom:role', Value: role },
         ],
         MessageAction: 'SUPPRESS', // Don't send Cognito's default email
       });
@@ -451,7 +451,7 @@ export class AuthService {
         firstName,
         lastName,
         phone,
-        ...(role && { role }),
+        role,
         status: UserStatus.ACTIVE,
         createdById,
       });
@@ -514,7 +514,7 @@ export class AuthService {
         throw new UnauthorizedException('Failed to complete password change');
       }
 
-      // Update lastLogin timestamp in database
+      // Update lastLogin and onboarding status in database
       try {
         const user = await this.userRepository.findOne({
           where: { email },
@@ -522,11 +522,15 @@ export class AuthService {
 
         if (user) {
           user.lastLogin = new Date();
+          // Set onboarding status to 'in_progress' on first password change
+          if (!user.onboardingStatus) {
+            user.onboardingStatus = 'in_progress' as any;
+          }
           await this.userRepository.save(user);
         }
       } catch (dbError) {
         // Log error but don't fail the login
-        console.error('Failed to update lastLogin:', dbError);
+        console.error('Failed to update lastLogin and onboarding status:', dbError);
       }
 
       return {
