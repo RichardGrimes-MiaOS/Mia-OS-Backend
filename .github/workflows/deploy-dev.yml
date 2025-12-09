@@ -8,7 +8,7 @@ env:
   ENVIRONMENT: development
   ECR_REPOSITORY: mia-development-backend
   ECS_CLUSTER: mia-backend-cluster
-  ECS_SERVICE: mia-backend-dev
+  ECS_SERVICE: mia-backend-development
 
 jobs:
   deploy:
