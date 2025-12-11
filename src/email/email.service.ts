@@ -26,6 +26,13 @@ export interface SendActivationEmailDto {
   lastName: string;
   phone?: string;
   userId: string;
+  isFastTrack?: boolean;
+}
+
+export interface SendOnboardedEmailDto {
+  email: string;
+  firstName: string;
+  lastName: string;
 }
 
 @Injectable()
@@ -258,6 +265,11 @@ If you have any questions, please contact our support team at support@mia.com
       const adminPortalUrl =
         process.env.ADMIN_PORTAL_URL || 'https://admin.makeincomeanywhere.com';
 
+      // Generate completed steps based on path type
+      const completedSteps = data.isFastTrack
+        ? '✅ Licensed Agent Intake Submitted<br />\n                              ✅ Multi-State Licenses Uploaded<br />\n                              ✅ E&O Insurance Uploaded'
+        : '✅ Pre-licensing Training Registered<br />\n                              ✅ Licensing Exam Passed<br />\n                              ✅ E&O Insurance Uploaded';
+
       const htmlBody = this.replaceTemplateVariables(htmlTemplate, {
         firstName: data.firstName,
         lastName: data.lastName,
@@ -265,6 +277,7 @@ If you have any questions, please contact our support team at support@mia.com
         phone: data.phone || 'N/A',
         userId: data.userId,
         adminPortalUrl,
+        completedSteps,
         currentYear: new Date().getFullYear().toString(),
       });
 
@@ -308,6 +321,14 @@ If you have any questions, please contact our support team at support@mia.com
     data: SendActivationEmailDto,
     adminPortalUrl: string,
   ): string {
+    const completedSteps = data.isFastTrack
+      ? `✅ Licensed Agent Intake Submitted
+✅ Multi-State Licenses Uploaded
+✅ E&O Insurance Uploaded`
+      : `✅ Pre-licensing Training Registered
+✅ Licensing Exam Passed
+✅ E&O Insurance Uploaded`;
+
     return `
 AGENT ACTIVATION REQUEST
 
@@ -322,15 +343,98 @@ AGENT INFORMATION:
 - User ID: ${data.userId}
 
 COMPLETED STEPS:
-✅ Pre-licensing Training Registered
-✅ Licensing Exam Passed
-✅ E&O Insurance Uploaded
+${completedSteps}
 
 Please review the agent's information in the admin portal and approve for activation.
 
 Review in Admin Portal: ${adminPortalUrl}
 
 This is an automated notification from the MIA CRM system.
+
+© ${new Date().getFullYear()} Make Income Anywhere. All rights reserved.
+    `.trim();
+  }
+
+  /**
+   * Send onboarded confirmation email to agent
+   */
+  async sendOnboardedEmail(data: SendOnboardedEmailDto): Promise<void> {
+    try {
+      const htmlTemplate = this.loadEmailTemplate('onboarded.html');
+      const dashboardUrl =
+        process.env.AGENT_DASHBOARD_URL || 'https://app.makeincomeanywhere.com';
+
+      const htmlBody = this.replaceTemplateVariables(htmlTemplate, {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        dashboardUrl,
+        currentYear: new Date().getFullYear().toString(),
+      });
+
+      const textBody = this.generateOnboardedTextVersion(data, dashboardUrl);
+
+      const command = new SendEmailCommand({
+        Source: this.fromEmail,
+        Destination: {
+          ToAddresses: [data.email],
+        },
+        Message: {
+          Subject: {
+            Data: 'Congratulations! You\'re Now an Active Agent - MIA',
+            Charset: 'UTF-8',
+          },
+          Body: {
+            Html: {
+              Data: htmlBody,
+              Charset: 'UTF-8',
+            },
+            Text: {
+              Data: textBody,
+              Charset: 'UTF-8',
+            },
+          },
+        },
+      });
+
+      await this.sesClient.send(command);
+      console.log(`Onboarded email sent to ${data.email}`);
+    } catch (error) {
+      console.error('Failed to send onboarded email via SES:', error);
+      // Don't throw error - log for monitoring
+    }
+  }
+
+  /**
+   * Generate plain text version of the onboarded email
+   */
+  private generateOnboardedTextVersion(
+    data: SendOnboardedEmailDto,
+    dashboardUrl: string,
+  ): string {
+    return `
+CONGRATULATIONS!
+
+Hi ${data.firstName},
+
+You've been officially activated as a MIA Agent!
+
+Your onboarding is complete and you're now ready to start your journey with us. Welcome to the team!
+
+YOUR STATUS:
+- Role: Agent
+- Onboarding Status: ✅ Complete
+
+WHAT'S NEXT?
+📱 Access your full agent dashboard
+📊 Review available resources and tools
+👥 Connect with your team
+🚀 Start making income anywhere!
+
+We're excited to have you on board! Your dedication during the onboarding process shows your commitment to success. If you have any questions as you get started, don't hesitate to reach out to your team lead or support.
+
+Go to Dashboard: ${dashboardUrl}
+
+If you have any questions, please contact your team lead or support.
 
 © ${new Date().getFullYear()} Make Income Anywhere. All rights reserved.
     `.trim();

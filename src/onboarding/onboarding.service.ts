@@ -10,13 +10,19 @@ import { LicensingTraining } from './entities/licensing-training.entity';
 import { LicensingExam, ExamResult } from './entities/licensing-exam.entity';
 import { EAndOInsurance } from './entities/e-and-o-insurance.entity';
 import { ActivationRequest } from './entities/activation-request.entity';
+import { LicensedAgentIntake } from './entities/licensed-agent-intake.entity';
+import { License } from './entities/license.entity';
 import { User, OnboardingStatus } from '../users/entities/user.entity';
 import { CreateLicensingTrainingDto } from './dto/create-licensing-training.dto';
 import { UpdateLicensingTrainingDto } from './dto/update-licensing-training.dto';
 import { CreateLicensingExamDto } from './dto/create-licensing-exam.dto';
 import { UpdateLicensingExamDto } from './dto/update-licensing-exam.dto';
 import { CreateEAndOInsuranceDto } from './dto/create-e-and-o-insurance.dto';
+import { CreateLicensedAgentIntakeDto } from './dto/create-licensed-agent-intake.dto';
+import { ActivateUserDto } from './dto/activate-user.dto';
 import { EmailService } from '../email/email.service';
+import { ActivationStatus } from './entities/activation-request.entity';
+import { UserRole } from '../users/entities/user.entity';
 
 @Injectable()
 export class OnboardingService {
@@ -29,6 +35,10 @@ export class OnboardingService {
     private readonly eAndOInsuranceRepository: Repository<EAndOInsurance>,
     @InjectRepository(ActivationRequest)
     private readonly activationRequestRepository: Repository<ActivationRequest>,
+    @InjectRepository(LicensedAgentIntake)
+    private readonly licensedAgentIntakeRepository: Repository<LicensedAgentIntake>,
+    @InjectRepository(License)
+    private readonly licenseRepository: Repository<License>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly emailService: EmailService,
@@ -131,7 +141,10 @@ export class OnboardingService {
 
       // If result is 'passed', update user's onboarding status
       if (dto.result === ExamResult.PASSED) {
-        await this.updateUserOnboardingStatus(userId, OnboardingStatus.LICENSED);
+        await this.updateUserOnboardingStatus(
+          userId,
+          OnboardingStatus.LICENSED,
+        );
       }
 
       return await this.getLicensingExam(userId);
@@ -217,6 +230,16 @@ export class OnboardingService {
       );
     }
 
+    // Verify user has passed licensing exam
+    const existingInsurance = await this.eAndOInsuranceRepository.findOne({
+      where: { userId },
+    });
+    if (existingInsurance) {
+      throw new BadRequestException(
+        'E&O insurance already exist for this user',
+      );
+    }
+
     const insurance = this.eAndOInsuranceRepository.create({
       userId,
       ...dto,
@@ -257,10 +280,125 @@ export class OnboardingService {
     return insurance;
   }
 
+  // ==================== LICENSED AGENT INTAKE (Fast-Track Path) ====================
+
+  async createLicensedAgentIntake(
+    userId: string,
+    dto: CreateLicensedAgentIntakeDto,
+  ): Promise<{ intake: LicensedAgentIntake; licenses: License[] }> {
+    // Check if user exists
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Verify user isLicensed flag is true
+    if (!user.isLicensed) {
+      throw new BadRequestException(
+        'User is not marked as licensed. This endpoint is only for already-licensed agents.',
+      );
+    }
+
+    // Check if intake record already exists
+    const existing = await this.licensedAgentIntakeRepository.findOne({
+      where: { userId },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'Licensed agent intake record already exists for this user',
+      );
+    }
+
+    // Validate debt details if hasExistingDebt is true
+    if (dto.hasExistingDebt && !dto.debtDetails) {
+      throw new BadRequestException(
+        'Debt details are required when hasExistingDebt is true',
+      );
+    }
+
+    // Create license records for each state
+    const licenses: License[] = [];
+    for (const licenseDto of dto.licenses) {
+      const license = this.licenseRepository.create({
+        userId,
+        state: licenseDto.state,
+        licenseNumber: licenseDto.licenseNumber,
+        expirationDate: new Date(licenseDto.expirationDate),
+        licenseDocumentPath: licenseDto.licenseDocumentPath,
+      });
+      const savedLicense = await this.licenseRepository.save(license);
+      licenses.push(savedLicense);
+    }
+
+    // Create intake record
+    const intake = this.licensedAgentIntakeRepository.create({
+      userId,
+      yearsLicensed: dto.yearsLicensed,
+      experienceLevel: dto.experienceLevel,
+      productFocus: dto.productFocus,
+      eAndODocumentPath: dto.eAndODocumentPath,
+      eAndOCarrierName: dto.eAndOCarrierName,
+      eAndOPolicyNumber: dto.eAndOPolicyNumber,
+      eAndOExpirationDate: new Date(dto.eAndOExpirationDate),
+      hasExistingDebt: dto.hasExistingDebt,
+      debtDetails: dto.debtDetails,
+      previousCarriers: dto.previousCarriers,
+    });
+
+    const savedIntake = await this.licensedAgentIntakeRepository.save(intake);
+
+    // Auto-create E&O insurance record from intake data
+    const eAndO = this.eAndOInsuranceRepository.create({
+      userId,
+      documentPath: dto.eAndODocumentPath,
+      carrierName: dto.eAndOCarrierName,
+      policyNumber: dto.eAndOPolicyNumber,
+      expirationDate: new Date(dto.eAndOExpirationDate),
+    });
+    await this.eAndOInsuranceRepository.save(eAndO);
+
+    // Update user onboarding status to pending_activation
+    await this.updateUserOnboardingStatus(
+      userId,
+      OnboardingStatus.PENDING_ACTIVATION,
+    );
+
+    // Create activation request and send email to Richard (fast-track path)
+    await this.createActivationRequestAndNotify(userId, true);
+
+    console.log(
+      `[OnboardingService] Successfully created licensed agent intake for user ${userId} with ${licenses.length} licenses`,
+    );
+
+    return { intake: savedIntake, licenses };
+  }
+
+  async getLicensedAgentIntake(userId: string): Promise<{
+    intake: LicensedAgentIntake;
+    licenses: License[];
+  }> {
+    const intake = await this.licensedAgentIntakeRepository.findOne({
+      where: { userId },
+      relations: ['user'],
+    });
+
+    if (!intake) {
+      throw new NotFoundException('Licensed agent intake record not found');
+    }
+
+    const licenses = await this.licenseRepository.find({
+      where: { userId },
+      order: { createdAt: 'ASC' },
+    });
+
+    return { intake, licenses };
+  }
+
   // ==================== ACTIVATION REQUEST ====================
 
   private async createActivationRequestAndNotify(
     userId: string,
+    isFastTrack: boolean = false,
   ): Promise<void> {
     // Check if activation request already exists
     const existing = await this.activationRequestRepository.findOne({
@@ -292,20 +430,23 @@ export class OnboardingService {
     await this.activationRequestRepository.save(activationRequest);
 
     // Send email to Richard (fire and forget)
-    this.sendActivationEmailToRichard(user, richardEmail).catch((error) => {
-      console.error(
-        `[OnboardingService] Failed to send activation email for user ${userId}:`,
-        error,
-      );
-    });
+    this.sendActivationEmailToRichard(user, richardEmail, isFastTrack).catch(
+      (error) => {
+        console.error(
+          `[OnboardingService] Failed to send activation email for user ${userId}:`,
+          error,
+        );
+      },
+    );
   }
 
   private async sendActivationEmailToRichard(
     user: User,
     richardEmail: string,
+    isFastTrack: boolean = false,
   ): Promise<void> {
     console.log(
-      `[OnboardingService] Sending activation email to ${richardEmail} for user ${user.email}`,
+      `[OnboardingService] Sending activation email to ${richardEmail} for user ${user.email} (${isFastTrack ? 'fast-track' : 'standard'} path)`,
     );
 
     await this.emailService.sendActivationEmail(
@@ -315,9 +456,88 @@ export class OnboardingService {
         lastName: user.lastName,
         phone: user.phone,
         userId: user.id,
+        isFastTrack,
       },
       richardEmail,
     );
+  }
+
+  /**
+   * Admin endpoint to activate a user after reviewing their onboarding
+   * This promotes the user from applicant to agent and marks onboarding complete
+   */
+  async activateUser(
+    userId: string,
+    adminId: string,
+    dto: ActivateUserDto,
+  ): Promise<{ user: User; activationRequest: ActivationRequest }> {
+    // Check if user exists
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Verify user is in pending_activation status
+    if (user.onboardingStatus !== OnboardingStatus.PENDING_ACTIVATION) {
+      throw new BadRequestException(
+        `User onboarding status must be 'pending_activation' to activate. Current status: ${user.onboardingStatus}`,
+      );
+    }
+
+    // Find activation request
+    const activationRequest = await this.activationRequestRepository.findOne({
+      where: { userId },
+    });
+
+    if (!activationRequest) {
+      throw new NotFoundException('Activation request not found for this user');
+    }
+
+    if (activationRequest.status !== ActivationStatus.PENDING) {
+      throw new BadRequestException(
+        `Activation request has already been ${activationRequest.status}`,
+      );
+    }
+
+    // Update user: promote to AGENT role and mark onboarding complete
+    await this.userRepository.update(userId, {
+      role: UserRole.AGENT,
+      onboardingStatus: OnboardingStatus.ONBOARDED,
+    });
+
+    // Update activation request
+    await this.activationRequestRepository.update(activationRequest.id, {
+      status: ActivationStatus.APPROVED,
+      approvedBy: adminId,
+      approvedAt: new Date(),
+      notes: dto.notes,
+    });
+
+    console.log(
+      `[OnboardingService] User ${userId} activated by admin ${adminId}. Promoted to AGENT role.`,
+    );
+
+    // Send onboarded confirmation email to the agent
+    await this.emailService.sendOnboardedEmail({
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    });
+
+    // Reload user and activation request with updated data
+    const updatedUser = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+    const updatedActivationRequest =
+      await this.activationRequestRepository.findOne({
+        where: { id: activationRequest.id },
+        relations: ['approver'],
+      });
+
+    return {
+      user: updatedUser!,
+      activationRequest: updatedActivationRequest!,
+    };
   }
 
   // ==================== HELPER METHODS ====================

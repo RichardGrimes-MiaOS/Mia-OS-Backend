@@ -6,6 +6,7 @@ import {
   MaxLength,
   MinLength,
   Matches,
+  IsBoolean,
 } from 'class-validator';
 import { RoleIntent } from '../entities/applicant.entity';
 
@@ -51,4 +52,8 @@ export class CreateApplicantDto {
   @IsEnum(RoleIntent)
   @IsNotEmpty()
   roleIntent: RoleIntent;
+
+  @IsBoolean()
+  @IsNotEmpty()
+  isLicensed: boolean;
 }

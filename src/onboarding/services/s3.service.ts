@@ -33,7 +33,7 @@ export class S3Service {
    * @param userId - User ID
    * @param fileName - Original file name
    * @param fileType - MIME type (application/pdf, image/png, etc.)
-   * @param folder - Folder path (e.g., 'licensing/training', 'licensing/exam', 'e-and-o')
+   * @param folder - Folder path (e.g., 'licensing/training', 'licensing/exam', 'e-and-o', 'licensing/intake')
    * @returns Pre-signed URL and S3 key
    */
   async getPresignedUploadUrl(

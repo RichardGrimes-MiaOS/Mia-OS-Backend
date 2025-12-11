@@ -10,8 +10,8 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
-@Entity('e_and_o_insurance')
-export class EAndOInsurance {
+@Entity('licenses')
+export class License {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -23,17 +23,17 @@ export class EAndOInsurance {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column({ type: 'varchar', length: 500 })
-  documentPath: string;
+  @Column({ type: 'varchar', length: 100 })
+  state: string;
 
   @Column({ type: 'varchar', length: 255 })
-  carrierName: string;
-
-  @Column({ type: 'varchar', length: 255 })
-  policyNumber: string;
+  licenseNumber: string;
 
   @Column({ type: 'date' })
   expirationDate: Date;
+
+  @Column({ type: 'varchar', length: 500 })
+  licenseDocumentPath: string;
 
   @CreateDateColumn()
   createdAt: Date;

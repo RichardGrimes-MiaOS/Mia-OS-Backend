@@ -13,11 +13,17 @@ import { LicensingTraining } from './onboarding/entities/licensing-training.enti
 import { LicensingExam } from './onboarding/entities/licensing-exam.entity';
 import { EAndOInsurance } from './onboarding/entities/e-and-o-insurance.entity';
 import { ActivationRequest } from './onboarding/entities/activation-request.entity';
+import { LicensedAgentIntake } from './onboarding/entities/licensed-agent-intake.entity';
+import { License } from './onboarding/entities/license.entity';
+import { Contact } from './contacts/entities/contact.entity';
+import { Task } from './tasks/entities/task.entity';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { HealthModule } from './health/health.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { ContactsModule } from './contacts/contacts.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -39,6 +45,10 @@ import { OnboardingModule } from './onboarding/onboarding.module';
         LicensingExam,
         EAndOInsurance,
         ActivationRequest,
+        LicensedAgentIntake,
+        License,
+        Contact,
+        Task,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
@@ -49,6 +59,8 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     ApplicantsModule,
     HealthModule,
     OnboardingModule,
+    ContactsModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [

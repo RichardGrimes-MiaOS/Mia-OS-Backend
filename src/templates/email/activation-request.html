@@ -1,113 +1,641 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!doctype html>
+<html
+  lang="en"
+  xmlns:v="urn:schemas-microsoft-com:vml"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta http-equiv="x-ua-compatible" content="ie=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="format-detection"
+      content="telephone=no, date=no, address=no, email=no"
+    />
     <title>Agent Activation Request</title>
-    <style>
-        body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
+
+    <style type="text/css">
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100% !important;
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+      }
+
+      table {
+        border-collapse: collapse;
+        border-spacing: 0;
+      }
+
+      img {
+        border: 0;
+        line-height: 100%;
+        outline: none;
+        text-decoration: none;
+        -ms-interpolation-mode: bicubic;
+      }
+
+      @media only screen and (max-width: 600px) {
+        .email-container {
+          width: 100% !important;
         }
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-            border-radius: 8px 8px 0 0;
+
+        .mobile-padding {
+          padding-left: 20px !important;
+          padding-right: 20px !important;
         }
-        .content {
-            background: #ffffff;
-            padding: 30px;
-            border: 1px solid #e0e0e0;
-            border-top: none;
+
+        .mobile-center {
+          text-align: center !important;
         }
-        .info-box {
-            background: #f8f9fa;
-            padding: 20px;
-            border-left: 4px solid #667eea;
-            margin: 20px 0;
+
+        .mobile-center-block {
+          margin-left: auto !important;
+          margin-right: auto !important;
+          float: none !important;
         }
-        .info-row {
-            margin: 10px 0;
-        }
-        .label {
-            font-weight: bold;
-            color: #667eea;
-            display: inline-block;
-            width: 150px;
-        }
-        .button {
-            display: inline-block;
-            background: #667eea;
-            color: white;
-            padding: 12px 30px;
-            text-decoration: none;
-            border-radius: 5px;
-            margin: 20px 0;
-        }
-        .footer {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-            font-size: 12px;
-        }
+      }
     </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🎓 Agent Activation Request</h1>
-    </div>
-    <div class="content">
-        <p>Hi Richard,</p>
 
-        <p>A new agent has completed their onboarding requirements and is ready for activation!</p>
+    <!--[if mso]>
+      <style type="text/css">
+        .fallback-font {
+          font-family: Arial, sans-serif !important;
+        }
+      </style>
+    <![endif]-->
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background-color: #000000;
+      font-family:
+        -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+        sans-serif;
+    "
+  >
+    <center style="width: 100%; background-color: #000000; padding: 20px 0">
+      <!-- Email Container -->
+      <table
+        align="center"
+        role="presentation"
+        cellspacing="0"
+        cellpadding="0"
+        border="0"
+        width="600"
+        style="margin: auto"
+        class="email-container"
+      >
+        <!-- Spacer -->
+        <tr>
+          <td
+            style="padding: 40px 0; text-align: center"
+            align="center"
+            class="mobile-center"
+          >
+            <table
+              role="presentation"
+              cellspacing="0"
+              cellpadding="0"
+              border="0"
+              width="100%"
+              align="center"
+            >
+              <tr>
+                <td
+                  style="text-align: center"
+                  align="center"
+                  class="mobile-center"
+                >
+                  <!-- Logo placeholder - replace with actual logo -->
+                  <center>
+                    <div
+                      style="
+                        font-family: 'Arial Black', Arial, sans-serif;
+                        font-size: 32px;
+                        font-weight: 900;
+                        color: #00e5ff;
+                        letter-spacing: 2px;
+                      "
+                    >
+                      MIA
+                    </div>
+                  </center>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
 
-        <div class="info-box">
-            <h3>Agent Information</h3>
-            <div class="info-row">
-                <span class="label">Name:</span>
-                <span>{{firstName}} {{lastName}}</span>
-            </div>
-            <div class="info-row">
-                <span class="label">Email:</span>
-                <span>{{email}}</span>
-            </div>
-            <div class="info-row">
-                <span class="label">Phone:</span>
-                <span>{{phone}}</span>
-            </div>
-            <div class="info-row">
-                <span class="label">User ID:</span>
-                <span>{{userId}}</span>
-            </div>
-        </div>
+        <!-- Main Content -->
+        <tr>
+          <td
+            style="
+              background-color: #111111;
+              border-radius: 8px;
+              overflow: hidden;
+            "
+          >
+            <table
+              role="presentation"
+              cellspacing="0"
+              cellpadding="0"
+              border="0"
+              width="100%"
+            >
+              <!-- Gradient Background Header -->
+              <tr>
+                <td style="padding: 0; position: relative">
+                  <!--[if mso]>
+                                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;height:10px;">
+                                <v:fill type="gradient" color="#00E5FF" color2="#FF00E6" angle="90" />
+                                <v:textbox style="mso-fit-shape-to-text:true" inset="0,0,0,0">
+                                <![endif]-->
+                  <div
+                    style="
+                      background: linear-gradient(
+                        90deg,
+                        #00e5ff 0%,
+                        #ff00e6 100%
+                      );
+                      height: 10px;
+                    "
+                  >
+                    &nbsp;
+                  </div>
+                  <!--[if mso]>
+                                </v:textbox>
+                                </v:rect>
+                                <![endif]-->
+                </td>
+              </tr>
 
-        <div class="info-box">
-            <h3>Completed Steps</h3>
-            <ul>
-                <li>✅ Pre-licensing Training Registered</li>
-                <li>✅ Licensing Exam Passed</li>
-                <li>✅ E&O Insurance Uploaded</li>
-            </ul>
-        </div>
+              <!-- Hero Icon -->
+              <tr>
+                <td
+                  style="padding: 40px 40px 20px 40px; text-align: center"
+                  align="center"
+                  class="mobile-center"
+                >
+                  <table
+                    role="presentation"
+                    cellspacing="0"
+                    cellpadding="0"
+                    border="0"
+                    width="100%"
+                    align="center"
+                  >
+                    <tr>
+                      <td
+                        style="text-align: center"
+                        align="center"
+                        class="mobile-center"
+                      >
+                        <center>
+                          <div
+                            style="
+                              display: inline-block;
+                              width: 80px;
+                              height: 80px;
+                              background: linear-gradient(
+                                135deg,
+                                #00e5ff 0%,
+                                #ff00e6 100%
+                              );
+                              border-radius: 50%;
+                              text-align: center;
+                              line-height: 80px;
+                              font-size: 40px;
+                              color: #ffffff;
+                              font-weight: bold;
+                            "
+                          >
+                            🎓
+                          </div>
+                        </center>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
 
-        <p>Please review the agent's information in the admin portal and approve for activation.</p>
+              <!-- Main Heading -->
+              <tr>
+                <td
+                  style="
+                    padding: 0 40px 20px 40px;
+                    text-align: center;
+                    font-family:
+                      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                      Helvetica, Arial, sans-serif;
+                    font-size: 28px;
+                    font-weight: bold;
+                    line-height: 36px;
+                    color: #ffffff;
+                  "
+                >
+                  Agent Activation Request
+                </td>
+              </tr>
 
-        <div style="text-align: center;">
-            <a href="{{adminPortalUrl}}" class="button">Review in Admin Portal</a>
-        </div>
+              <!-- Subheading -->
+              <tr>
+                <td
+                  style="
+                    padding: 0 40px 30px 40px;
+                    text-align: center;
+                    font-family:
+                      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                      Helvetica, Arial, sans-serif;
+                    font-size: 16px;
+                    line-height: 24px;
+                    color: #cccccc;
+                  "
+                >
+                  Hi Richard,<br /><br />
+                  A new agent has completed their onboarding requirements and is
+                  ready for activation!
+                </td>
+              </tr>
 
-        <p style="margin-top: 30px; color: #666; font-size: 14px;">
-            This is an automated notification from the MIA CRM system.
-        </p>
-    </div>
-    <div class="footer">
-        <p>© {{currentYear}} Make Income Anywhere. All rights reserved.</p>
-    </div>
-</body>
+              <!-- Agent Information Box -->
+              <tr>
+                <td style="padding: 0 40px 20px 40px" class="mobile-padding">
+                  <table
+                    role="presentation"
+                    cellspacing="0"
+                    cellpadding="0"
+                    border="0"
+                    width="100%"
+                    style="
+                      background-color: #1a1a1a;
+                      border-radius: 8px;
+                      border: 1px solid #2a2a2a;
+                    "
+                  >
+                    <tr>
+                      <td style="padding: 30px">
+                        <table
+                          role="presentation"
+                          cellspacing="0"
+                          cellpadding="0"
+                          border="0"
+                          width="100%"
+                        >
+                          <tr>
+                            <td
+                              style="
+                                padding-bottom: 15px;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 14px;
+                                font-weight: bold;
+                                color: #00e5ff;
+                                text-transform: uppercase;
+                                letter-spacing: 1px;
+                              "
+                            >
+                              Agent Information
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              style="
+                                padding: 12px 0;
+                                border-bottom: 1px solid #2a2a2a;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 14px;
+                                color: #999999;
+                              "
+                            >
+                              Name
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              style="
+                                padding: 12px 0;
+                                border-bottom: 1px solid #2a2a2a;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 16px;
+                                color: #ffffff;
+                                font-weight: 500;
+                              "
+                            >
+                              {{firstName}} {{lastName}}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              style="
+                                padding: 12px 0;
+                                border-bottom: 1px solid #2a2a2a;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 14px;
+                                color: #999999;
+                              "
+                            >
+                              Email
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              style="
+                                padding: 12px 0;
+                                border-bottom: 1px solid #2a2a2a;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 16px;
+                                color: #ffffff;
+                                font-weight: 500;
+                              "
+                            >
+                              {{email}}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              style="
+                                padding: 12px 0;
+                                border-bottom: 1px solid #2a2a2a;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 14px;
+                                color: #999999;
+                              "
+                            >
+                              Phone
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              style="
+                                padding: 12px 0;
+                                border-bottom: 1px solid #2a2a2a;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 16px;
+                                color: #ffffff;
+                                font-weight: 500;
+                              "
+                            >
+                              {{phone}}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              style="
+                                padding: 12px 0 8px 0;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 14px;
+                                color: #999999;
+                              "
+                            >
+                              User ID
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              style="
+                                padding: 0 0 12px 0;
+                                font-family: 'Courier New', Courier, monospace;
+                                font-size: 14px;
+                                color: #00e5ff;
+                                font-weight: 600;
+                                letter-spacing: 1px;
+                              "
+                            >
+                              {{userId}}
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <!-- Completed Steps Box -->
+              <tr>
+                <td style="padding: 0 40px 30px 40px" class="mobile-padding">
+                  <table
+                    role="presentation"
+                    cellspacing="0"
+                    cellpadding="0"
+                    border="0"
+                    width="100%"
+                    style="
+                      background-color: #1a1a1a;
+                      border-radius: 8px;
+                      border: 1px solid #2a2a2a;
+                    "
+                  >
+                    <tr>
+                      <td style="padding: 30px">
+                        <table
+                          role="presentation"
+                          cellspacing="0"
+                          cellpadding="0"
+                          border="0"
+                          width="100%"
+                        >
+                          <tr>
+                            <td
+                              style="
+                                padding-bottom: 15px;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 14px;
+                                font-weight: bold;
+                                color: #00e5ff;
+                                text-transform: uppercase;
+                                letter-spacing: 1px;
+                              "
+                            >
+                              Completed Steps
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              style="
+                                padding: 8px 0;
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 15px;
+                                line-height: 28px;
+                                color: #cccccc;
+                              "
+                            >
+                              {{completedSteps}}
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <!-- Notice Box -->
+              <tr>
+                <td
+                  style="padding: 0 40px 30px 40px; text-align: center"
+                  class="mobile-padding"
+                >
+                  <table
+                    role="presentation"
+                    cellspacing="0"
+                    cellpadding="0"
+                    border="0"
+                    width="100%"
+                    style="
+                      background-color: #1a1a1a;
+                      border-radius: 8px;
+                      border-left: 4px solid #ff00e6;
+                    "
+                  >
+                    <tr>
+                      <td style="padding: 20px 25px">
+                        <table
+                          role="presentation"
+                          cellspacing="0"
+                          cellpadding="0"
+                          border="0"
+                          width="100%"
+                        >
+                          <tr>
+                            <td
+                              style="
+                                font-family:
+                                  -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                                  Roboto, Helvetica, Arial, sans-serif;
+                                font-size: 14px;
+                                line-height: 20px;
+                                color: #cccccc;
+                                text-align: left;
+                              "
+                            >
+                              Please review the agent's information in the admin
+                              portal and approve for activation.
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <!-- CTA Button -->
+              <tr>
+                <td
+                  style="padding: 0 40px 40px 40px; text-align: center"
+                  class="mobile-padding"
+                >
+                  <table
+                    role="presentation"
+                    cellspacing="0"
+                    cellpadding="0"
+                    border="0"
+                    align="center"
+                  >
+                    <tr>
+                      <td
+                        style="
+                          border-radius: 6px;
+                          background: linear-gradient(
+                            135deg,
+                            #00e5ff 0%,
+                            #ff00e6 100%
+                          );
+                        "
+                      >
+                        <a
+                          href="{{adminPortalUrl}}"
+                          style="
+                            background: linear-gradient(
+                              135deg,
+                              #00e5ff 0%,
+                              #ff00e6 100%
+                            );
+                            border: none;
+                            font-family:
+                              -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                              Roboto, Helvetica, Arial, sans-serif;
+                            font-size: 16px;
+                            font-weight: 600;
+                            line-height: 1;
+                            color: #ffffff;
+                            text-decoration: none;
+                            border-radius: 6px;
+                            padding: 16px 32px;
+                            display: inline-block;
+                          "
+                        >
+                          Review in Admin Portal
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <!-- System Note -->
+              <tr>
+                <td
+                  style="
+                    padding: 0 40px 40px 40px;
+                    text-align: center;
+                    font-family:
+                      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                      Helvetica, Arial, sans-serif;
+                    font-size: 14px;
+                    line-height: 20px;
+                    color: #666666;
+                  "
+                >
+                  This is an automated notification from the MIA CRM system.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td
+            style="
+              padding: 30px 40px;
+              text-align: center;
+              font-family:
+                -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                Helvetica, Arial, sans-serif;
+              font-size: 14px;
+              line-height: 20px;
+              color: #666666;
+            "
+          >
+            © {{currentYear}} Make Income Anywhere. All rights reserved.
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
 </html>

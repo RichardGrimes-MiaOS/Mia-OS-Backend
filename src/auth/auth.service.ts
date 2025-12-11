@@ -45,10 +45,14 @@ export class AuthService {
       region: this.configService.get<string>('AWS_REGION'),
     });
     this.clientId = this.configService.get<string>('AWS_COGNITO_CLIENT_ID')!;
-    this.userPoolId = this.configService.get<string>('AWS_COGNITO_USER_POOL_ID')!;
+    this.userPoolId = this.configService.get<string>(
+      'AWS_COGNITO_USER_POOL_ID',
+    )!;
   }
 
-  async signup(signupDto: SignupDto): Promise<{ message: string; userSub: string }> {
+  async signup(
+    signupDto: SignupDto,
+  ): Promise<{ message: string; userSub: string }> {
     const { email, password, firstName, lastName, phone, role } = signupDto;
 
     try {
@@ -78,7 +82,9 @@ export class AuthService {
       const signUpResponse = await this.cognitoClient.send(signUpCommand);
 
       if (!signUpResponse.UserSub) {
-        throw new InternalServerErrorException('Failed to create user in Cognito');
+        throw new InternalServerErrorException(
+          'Failed to create user in Cognito',
+        );
       }
 
       // Create user record in database
@@ -95,7 +101,8 @@ export class AuthService {
       await this.userRepository.save(user);
 
       return {
-        message: 'User registered successfully. Please check your email to verify your account.',
+        message:
+          'User registered successfully. Please check your email to verify your account.',
         userSub: signUpResponse.UserSub,
       };
     } catch (error: any) {
@@ -104,7 +111,9 @@ export class AuthService {
       }
 
       if (error.name === 'UsernameExistsException') {
-        throw new ConflictException('User with this email already exists in Cognito');
+        throw new ConflictException(
+          'User with this email already exists in Cognito',
+        );
       }
 
       if (error.name === 'InvalidPasswordException') {
@@ -116,12 +125,16 @@ export class AuthService {
       }
 
       if (error.name === 'ResourceNotFoundException') {
-        throw new InternalServerErrorException('Cognito User Pool not found. Please check your AWS configuration.');
+        throw new InternalServerErrorException(
+          'Cognito User Pool not found. Please check your AWS configuration.',
+        );
       }
 
       // Log the actual error for debugging
       console.error('Cognito signup error:', error);
-      throw new InternalServerErrorException(`Failed to register user: ${error.message || 'Unknown error'}`);
+      throw new InternalServerErrorException(
+        `Failed to register user: ${error.message || 'Unknown error'}`,
+      );
     }
   }
 
@@ -187,12 +200,17 @@ export class AuthService {
         expiresIn: authResponse.AuthenticationResult.ExpiresIn!,
       };
     } catch (error: any) {
-      if (error.name === 'NotAuthorizedException' || error.name === 'UserNotFoundException') {
+      if (
+        error.name === 'NotAuthorizedException' ||
+        error.name === 'UserNotFoundException'
+      ) {
         throw new UnauthorizedException('Invalid email or password');
       }
 
       if (error.name === 'UserNotConfirmedException') {
-        throw new UnauthorizedException('Please verify your email before logging in');
+        throw new UnauthorizedException(
+          'Please verify your email before logging in',
+        );
       }
 
       throw new InternalServerErrorException('Login failed');
@@ -253,7 +271,9 @@ export class AuthService {
       }
 
       if (error.name === 'InvalidPasswordException') {
-        throw new BadRequestException('New password does not meet requirements');
+        throw new BadRequestException(
+          'New password does not meet requirements',
+        );
       }
 
       throw new InternalServerErrorException('Password change failed');
@@ -272,10 +292,7 @@ export class AuthService {
     return user;
   }
 
-  async updateUserRole(
-    userId: string,
-    role: UserRole,
-  ): Promise<User> {
+  async updateUserRole(userId: string, role: UserRole): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
     });
@@ -293,9 +310,7 @@ export class AuthService {
       const updateCommand = new AdminUpdateUserAttributesCommand({
         UserPoolId: this.userPoolId,
         Username: user.cognitoSub,
-        UserAttributes: [
-          { Name: 'custom:role', Value: role },
-        ],
+        UserAttributes: [{ Name: 'custom:role', Value: role }],
       });
 
       await this.cognitoClient.send(updateCommand);
@@ -307,10 +322,7 @@ export class AuthService {
     return user;
   }
 
-  async updateUserStatus(
-    userId: string,
-    status: UserStatus,
-  ): Promise<User> {
+  async updateUserStatus(userId: string, status: UserStatus): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
     });
@@ -323,7 +335,9 @@ export class AuthService {
     return await this.userRepository.save(user);
   }
 
-  async confirmEmail(confirmEmailDto: ConfirmEmailDto): Promise<{ message: string }> {
+  async confirmEmail(
+    confirmEmailDto: ConfirmEmailDto,
+  ): Promise<{ message: string }> {
     try {
       const confirmCommand = new ConfirmSignUpCommand({
         ClientId: this.clientId,
@@ -342,7 +356,9 @@ export class AuthService {
       }
 
       if (error.name === 'ExpiredCodeException') {
-        throw new BadRequestException('Verification code has expired. Please request a new one.');
+        throw new BadRequestException(
+          'Verification code has expired. Please request a new one.',
+        );
       }
 
       if (error.name === 'UserNotFoundException') {
@@ -354,11 +370,15 @@ export class AuthService {
       }
 
       console.error('Cognito confirmation error:', error);
-      throw new InternalServerErrorException(`Email confirmation failed: ${error.message || 'Unknown error'}`);
+      throw new InternalServerErrorException(
+        `Email confirmation failed: ${error.message || 'Unknown error'}`,
+      );
     }
   }
 
-  async resendConfirmationCode(resendDto: ResendConfirmationDto): Promise<{ message: string }> {
+  async resendConfirmationCode(
+    resendDto: ResendConfirmationDto,
+  ): Promise<{ message: string }> {
     try {
       const resendCommand = new ResendConfirmationCodeCommand({
         ClientId: this.clientId,
@@ -380,11 +400,15 @@ export class AuthService {
       }
 
       if (error.name === 'LimitExceededException') {
-        throw new BadRequestException('Too many requests. Please try again later.');
+        throw new BadRequestException(
+          'Too many requests. Please try again later.',
+        );
       }
 
       console.error('Cognito resend code error:', error);
-      throw new InternalServerErrorException(`Failed to resend code: ${error.message || 'Unknown error'}`);
+      throw new InternalServerErrorException(
+        `Failed to resend code: ${error.message || 'Unknown error'}`,
+      );
     }
   }
 
@@ -429,10 +453,13 @@ export class AuthService {
         MessageAction: 'SUPPRESS', // Don't send Cognito's default email
       });
 
-      const createUserResponse = await this.cognitoClient.send(createUserCommand);
+      const createUserResponse =
+        await this.cognitoClient.send(createUserCommand);
 
       if (!createUserResponse.User?.Username) {
-        throw new InternalServerErrorException('Failed to create user in Cognito');
+        throw new InternalServerErrorException(
+          'Failed to create user in Cognito',
+        );
       }
 
       // Get the Cognito Sub from the user attributes
@@ -441,7 +468,9 @@ export class AuthService {
       )?.Value;
 
       if (!cognitoSub) {
-        throw new InternalServerErrorException('Failed to retrieve Cognito Sub');
+        throw new InternalServerErrorException(
+          'Failed to retrieve Cognito Sub',
+        );
       }
 
       // Create user record in database
@@ -468,7 +497,9 @@ export class AuthService {
       }
 
       if (error.name === 'UsernameExistsException') {
-        throw new ConflictException('User with this email already exists in Cognito');
+        throw new ConflictException(
+          'User with this email already exists in Cognito',
+        );
       }
 
       if (error.name === 'InvalidPasswordException') {
@@ -480,7 +511,9 @@ export class AuthService {
       }
 
       console.error('Cognito create user error:', error);
-      throw new InternalServerErrorException(`Failed to create user: ${error.message || 'Unknown error'}`);
+      throw new InternalServerErrorException(
+        `Failed to create user: ${error.message || 'Unknown error'}`,
+      );
     }
   }
 
@@ -530,7 +563,10 @@ export class AuthService {
         }
       } catch (dbError) {
         // Log error but don't fail the login
-        console.error('Failed to update lastLogin and onboarding status:', dbError);
+        console.error(
+          'Failed to update lastLogin and onboarding status:',
+          dbError,
+        );
       }
 
       return {
@@ -541,7 +577,9 @@ export class AuthService {
       };
     } catch (error: any) {
       if (error.name === 'InvalidPasswordException') {
-        throw new BadRequestException('New password does not meet requirements');
+        throw new BadRequestException(
+          'New password does not meet requirements',
+        );
       }
 
       if (error.name === 'NotAuthorizedException') {

@@ -242,6 +242,11 @@ export class ApplicantsService {
       );
       console.log(temporaryPassword);
 
+      // Copy isLicensed from applicant to user
+      await this.userRepository.update(user.id, {
+        isLicensed: applicant.isLicensed,
+      });
+
       // Link applicant to created user - only update userId without overwriting other fields
       await this.applicantRepository.update(applicant.id, {
         userId: user.id,

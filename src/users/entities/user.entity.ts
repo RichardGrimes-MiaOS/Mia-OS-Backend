@@ -7,6 +7,7 @@ import {
   Index,
   ManyToOne,
   JoinColumn,
+  OneToMany,
 } from 'typeorm';
 
 export enum UserRole {
@@ -88,6 +89,9 @@ export class User {
 
   @Column({ type: 'uuid', nullable: true })
   createdById?: string;
+
+  @OneToMany('Contact', 'user')
+  contacts: any[];
 
   @CreateDateColumn()
   createdAt: Date;

@@ -12,6 +12,6 @@ export class PresignedUrlRequestDto {
 
   @IsString()
   @IsNotEmpty()
-  @IsIn(['licensing/training', 'licensing/exam', 'e-and-o'])
+  @IsIn(['licensing/training', 'licensing/exam', 'e-and-o', 'licensing/intake'])
   folder: string;
 }

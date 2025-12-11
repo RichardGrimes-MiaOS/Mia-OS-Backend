@@ -52,6 +52,9 @@ export class Applicant {
   })
   roleIntent: RoleIntent;
 
+  @Column({ type: 'boolean', default: false })
+  isLicensed: boolean;
+
   @Column({
     type: 'enum',
     enum: ApplicantStatus,

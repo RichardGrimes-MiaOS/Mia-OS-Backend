@@ -16,10 +16,14 @@ import { UpdateLicensingTrainingDto } from './dto/update-licensing-training.dto'
 import { CreateLicensingExamDto } from './dto/create-licensing-exam.dto';
 import { UpdateLicensingExamDto } from './dto/update-licensing-exam.dto';
 import { CreateEAndOInsuranceDto } from './dto/create-e-and-o-insurance.dto';
+import { CreateLicensedAgentIntakeDto } from './dto/create-licensed-agent-intake.dto';
+import { ActivateUserDto } from './dto/activate-user.dto';
 import { PresignedUrlRequestDto } from './dto/presigned-url-request.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 
 @Controller('onboarding')
 @UseGuards(JwtAuthGuard)
@@ -119,5 +123,38 @@ export class OnboardingController {
   @Get('e-and-o-insurance/:id')
   async getEAndOInsuranceById(@Param('id') id: string) {
     return await this.onboardingService.getEAndOInsuranceById(id);
+  }
+
+  // ==================== LICENSED AGENT INTAKE (Fast-Track Path) ====================
+
+  @Post('licensed-intake')
+  @HttpCode(HttpStatus.CREATED)
+  async createLicensedAgentIntake(
+    @CurrentUser() user: User,
+    @Body() dto: CreateLicensedAgentIntakeDto,
+  ) {
+    return await this.onboardingService.createLicensedAgentIntake(
+      user.id,
+      dto,
+    );
+  }
+
+  @Get('licensed-intake')
+  async getLicensedAgentIntake(@CurrentUser() user: User) {
+    return await this.onboardingService.getLicensedAgentIntake(user.id);
+  }
+
+  // ==================== ADMIN ACTIVATION ====================
+
+  @Post('activate/:userId')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async activateUser(
+    @Param('userId') userId: string,
+    @CurrentUser() admin: User,
+    @Body() dto: ActivateUserDto,
+  ) {
+    return await this.onboardingService.activateUser(userId, admin.id, dto);
   }
 }
