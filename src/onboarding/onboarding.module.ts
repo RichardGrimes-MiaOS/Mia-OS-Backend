@@ -11,6 +11,7 @@ import { License } from './entities/license.entity';
 import { User } from '../users/entities/user.entity';
 import { EmailModule } from '../email/email.module';
 import { S3Service } from './services/s3.service';
+import { AffiliatesModule } from '../affiliates/affiliates.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { S3Service } from './services/s3.service';
       User,
     ]),
     EmailModule,
+    AffiliatesModule,
   ],
   controllers: [OnboardingController],
   providers: [OnboardingService, S3Service],

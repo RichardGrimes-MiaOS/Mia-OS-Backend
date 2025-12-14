@@ -12,6 +12,8 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { FilterTaskDto } from './dto/filter-task.dto';
 import { UserRole } from '../users/entities/user.entity';
 import { TaskStatus } from './enums/task-status.enum';
+import { ActivationService } from '../activation/activation.service';
+import { ActivationActionType } from '../users/enums/activation-action-type.enum';
 
 @Injectable()
 export class TasksService {
@@ -20,6 +22,7 @@ export class TasksService {
     private readonly taskRepository: Repository<Task>,
     @InjectRepository(Contact)
     private readonly contactRepository: Repository<Contact>,
+    private readonly activationService: ActivationService,
   ) {}
 
   async create(userId: string, createTaskDto: CreateTaskDto): Promise<Task> {
@@ -158,9 +161,21 @@ export class TasksService {
       }
     }
 
+    // Check if task is being completed
+    const wasNotCompleted = task.status !== TaskStatus.COMPLETED;
+    const isNowCompleted = updateTaskDto.status === TaskStatus.COMPLETED;
+
     Object.assign(task, updateTaskDto);
 
     await this.taskRepository.save(task);
+
+    // Trigger activation when agent completes their first task
+    if (wasNotCompleted && isNowCompleted) {
+      await this.activationService.triggerActivation(
+        task.userId,
+        ActivationActionType.TASK_COMPLETED,
+      );
+    }
 
     // Reload task with contact relation
     const updatedTask = await this.taskRepository.findOne({

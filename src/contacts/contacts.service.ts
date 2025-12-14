@@ -11,12 +11,15 @@ import { UpdateContactDto } from './dto/update-contact.dto';
 import { FilterContactDto } from './dto/filter-contact.dto';
 import { UserRole } from '../users/entities/user.entity';
 import { PipelineStage } from './enums/pipeline-stage.enum';
+import { ActivationService } from '../activation/activation.service';
+import { ActivationActionType } from '../users/enums/activation-action-type.enum';
 
 @Injectable()
 export class ContactsService {
   constructor(
     @InjectRepository(Contact)
     private readonly contactRepository: Repository<Contact>,
+    private readonly activationService: ActivationService,
   ) {}
 
   async create(
@@ -30,7 +33,15 @@ export class ContactsService {
       lastActivityAt: new Date(),
     });
 
-    return this.contactRepository.save(contact);
+    const savedContact = await this.contactRepository.save(contact);
+
+    // Trigger activation when agent creates their first contact
+    await this.activationService.triggerActivation(
+      userId,
+      ActivationActionType.CONTACT_CREATED,
+    );
+
+    return savedContact;
   }
 
   async findAll(

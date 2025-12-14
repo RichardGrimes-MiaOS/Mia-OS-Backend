@@ -84,6 +84,77 @@ export class S3Service {
   }
 
   /**
+   * Generate pre-signed URL for affiliate profile photo upload
+   * @param fileName - Original file name
+   * @param fileType - MIME type (image/png, image/jpeg, image/jpg)
+   * @returns Pre-signed URL and S3 key
+   */
+  async getAffiliatePhotoPresignedUrl(
+    fileName: string,
+    fileType: string,
+  ): Promise<{ uploadUrl: string; key: string }> {
+    // Validate file type (images only)
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    if (!allowedTypes.includes(fileType)) {
+      throw new BadRequestException(
+        'Invalid file type. Only PNG, JPG, and JPEG are allowed for affiliate photos.',
+      );
+    }
+
+    // Generate unique file key
+    const fileExtension = fileName.split('.').pop();
+    const uniqueFileName = `${uuidv4()}.${fileExtension}`;
+    const key = `affiliate-profiles/${uniqueFileName}`;
+
+    // Create PutObject command
+    const command = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      ContentType: fileType,
+      // Add metadata
+      Metadata: {
+        originalFileName: fileName,
+        uploadType: 'affiliate-profile-photo',
+      },
+    });
+
+    // Generate pre-signed URL (valid for 15 minutes)
+    const uploadUrl = await getSignedUrl(this.s3Client, command, {
+      expiresIn: 900, // 15 minutes
+    });
+
+    return {
+      uploadUrl,
+      key,
+    };
+  }
+
+  /**
+   * Upload QR code buffer to S3
+   * @param qrCodeBuffer - QR code image buffer
+   * @param userId - User ID for file naming
+   * @returns S3 URL of uploaded QR code
+   */
+  async uploadQrCode(qrCodeBuffer: Buffer, userId: string): Promise<string> {
+    const key = `users/${userId}/qr-codes/${userId}.png`;
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      Body: qrCodeBuffer,
+      ContentType: 'image/png',
+      Metadata: {
+        userId,
+        type: 'qr-code',
+      },
+    });
+
+    await this.s3Client.send(command);
+
+    return this.getPublicUrl(key);
+  }
+
+  /**
    * Get public URL for uploaded file
    * @param key - S3 key
    * @returns Public URL

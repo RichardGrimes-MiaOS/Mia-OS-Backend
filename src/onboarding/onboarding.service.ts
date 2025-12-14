@@ -23,6 +23,12 @@ import { ActivateUserDto } from './dto/activate-user.dto';
 import { EmailService } from '../email/email.service';
 import { ActivationStatus } from './entities/activation-request.entity';
 import { UserRole } from '../users/entities/user.entity';
+import { AffiliateProfilesService } from '../affiliates/services/affiliate-profiles.service';
+import { AffiliateUserPerformanceService } from '../affiliates/services/affiliate-user-performance.service';
+import { CompleteAffiliateOnboardingDto } from './dto/complete-affiliate-onboarding.dto';
+import { generateReferralCode } from '../affiliates/utils/generate-referral-code';
+import { generateAndUploadQrCode } from '../affiliates/utils/generate-qr-code';
+import { S3Service } from './services/s3.service';
 
 @Injectable()
 export class OnboardingService {
@@ -42,6 +48,9 @@ export class OnboardingService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly emailService: EmailService,
+    private readonly affiliateProfilesService: AffiliateProfilesService,
+    private readonly affiliateUserPerformanceService: AffiliateUserPerformanceService,
+    private readonly s3Service: S3Service,
   ) {}
 
   // ==================== LICENSING TRAINING ====================
@@ -392,6 +401,106 @@ export class OnboardingService {
     });
 
     return { intake, licenses };
+  }
+
+  // ==================== AFFILIATE-ONLY ONBOARDING ====================
+
+  /**
+   * Complete affiliate-only onboarding
+   * Auto-matches user to AffiliateProfile by email if it exists
+   */
+  async completeAffiliateOnboarding(
+    userId: string,
+    dto: CompleteAffiliateOnboardingDto,
+  ): Promise<User> {
+    // Check if user exists
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Try to find matching AffiliateProfile by email
+    let affiliateProfileId: string | undefined = undefined;
+    const matchingProfile = await this.affiliateProfilesService.findByEmail(
+      user.email,
+    );
+
+    if (matchingProfile) {
+      // Check if profile is already linked to another user
+      const existingLink = await this.userRepository.findOne({
+        where: { affiliate_profile_id: matchingProfile.id },
+      });
+
+      if (existingLink && existingLink.id !== userId) {
+        throw new BadRequestException(
+          'This affiliate profile is already linked to another user',
+        );
+      }
+
+      affiliateProfileId = matchingProfile.id;
+      console.log(
+        `[OnboardingService] Matched user ${userId} to affiliate profile ${affiliateProfileId} by email`,
+      );
+    }
+
+    // Generate unique referral link (using unique code)
+    let referralCode: string;
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!isUnique && attempts < maxAttempts) {
+      referralCode = generateReferralCode();
+      const existingCode = await this.userRepository.findOne({
+        where: {
+          referral_link: `${process.env.PUBLIC_SITE_URL}/ref/${referralCode}`,
+        },
+      });
+
+      if (!existingCode) {
+        isUnique = true;
+      }
+      attempts++;
+    }
+
+    if (!isUnique) {
+      throw new BadRequestException(
+        'Failed to generate unique referral link. Please try again.',
+      );
+    }
+
+    const referralLink = `${process.env.PUBLIC_SITE_URL}/ref/${referralCode!}`;
+
+    // Generate and upload QR code
+    const qrCodeUrl = await generateAndUploadQrCode(
+      referralLink,
+      userId,
+      this.s3Service,
+    );
+
+    // Update user record
+    await this.userRepository.update(userId, {
+      role: UserRole.AFFILIATE_ONLY,
+      affiliate_profile_id: affiliateProfileId,
+      referral_link: referralLink,
+      qr_code_url: qrCodeUrl,
+      onboardingStatus: OnboardingStatus.ONBOARDED,
+    });
+
+    // Create AffiliateUserPerformance record
+    await this.affiliateUserPerformanceService.create(userId);
+
+    console.log(
+      `[OnboardingService] Successfully completed affiliate-only onboarding for user ${userId}${affiliateProfileId ? `, linked to profile ${affiliateProfileId}` : ''}`,
+    );
+
+    // Reload and return user with updated data
+    const updatedUser = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['affiliateProfile'],
+    });
+
+    return updatedUser!;
   }
 
   // ==================== ACTIVATION REQUEST ====================

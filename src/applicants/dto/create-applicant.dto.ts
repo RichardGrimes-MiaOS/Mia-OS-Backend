@@ -7,6 +7,7 @@ import {
   MinLength,
   Matches,
   IsBoolean,
+  IsOptional,
 } from 'class-validator';
 import { RoleIntent } from '../entities/applicant.entity';
 
@@ -56,4 +57,14 @@ export class CreateApplicantDto {
   @IsBoolean()
   @IsNotEmpty()
   isLicensed: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  referral_code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  referral_link?: string;
 }

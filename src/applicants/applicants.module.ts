@@ -4,14 +4,25 @@ import { ApplicantsService } from './applicants.service';
 import { ApplicantsController } from './applicants.controller';
 import { Applicant } from './entities/applicant.entity';
 import { User } from '../users/entities/user.entity';
+import { AffiliateProfile } from '../affiliates/entities/affiliate-profile.entity';
+import { AffiliateEvents } from '../affiliates/entities/affiliate-events.entity';
+import { AffiliateUserPerformance } from '../affiliates/entities/affiliate-user-performance.entity';
 import { EmailModule } from '../email/email.module';
 import { AuthModule } from '../auth/auth.module';
+import { ActivationModule } from '../activation/activation.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Applicant, User]),
+    TypeOrmModule.forFeature([
+      Applicant,
+      User,
+      AffiliateProfile,
+      AffiliateEvents,
+      AffiliateUserPerformance,
+    ]),
     EmailModule,
     forwardRef(() => AuthModule),
+    ActivationModule,
   ],
   controllers: [ApplicantsController],
   providers: [ApplicantsService],

@@ -19,6 +19,7 @@ import { CreateEAndOInsuranceDto } from './dto/create-e-and-o-insurance.dto';
 import { CreateLicensedAgentIntakeDto } from './dto/create-licensed-agent-intake.dto';
 import { ActivateUserDto } from './dto/activate-user.dto';
 import { PresignedUrlRequestDto } from './dto/presigned-url-request.dto';
+import { CompleteAffiliateOnboardingDto } from './dto/complete-affiliate-onboarding.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -142,6 +143,20 @@ export class OnboardingController {
   @Get('licensed-intake')
   async getLicensedAgentIntake(@CurrentUser() user: User) {
     return await this.onboardingService.getLicensedAgentIntake(user.id);
+  }
+
+  // ==================== AFFILIATE-ONLY ONBOARDING ====================
+
+  @Post('affiliate')
+  @HttpCode(HttpStatus.OK)
+  async completeAffiliateOnboarding(
+    @CurrentUser() user: User,
+    @Body() dto: CompleteAffiliateOnboardingDto,
+  ) {
+    return await this.onboardingService.completeAffiliateOnboarding(
+      user.id,
+      dto,
+    );
   }
 
   // ==================== ADMIN ACTIVATION ====================

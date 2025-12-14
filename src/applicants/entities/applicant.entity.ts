@@ -76,6 +76,12 @@ export class Applicant {
   @Column({ type: 'uuid', nullable: true })
   userId?: string;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  referral_code?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  referral_link?: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

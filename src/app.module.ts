@@ -17,6 +17,10 @@ import { LicensedAgentIntake } from './onboarding/entities/licensed-agent-intake
 import { License } from './onboarding/entities/license.entity';
 import { Contact } from './contacts/entities/contact.entity';
 import { Task } from './tasks/entities/task.entity';
+import { AffiliateProfile } from './affiliates/entities/affiliate-profile.entity';
+import { AffiliateEvents } from './affiliates/entities/affiliate-events.entity';
+import { AffiliateUserPerformance } from './affiliates/entities/affiliate-user-performance.entity';
+import { AffiliateVisitor } from './affiliates/entities/affiliate-visitor.entity';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -24,6 +28,9 @@ import { HealthModule } from './health/health.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { ContactsModule } from './contacts/contacts.module';
 import { TasksModule } from './tasks/tasks.module';
+import { AffiliatesModule } from './affiliates/affiliates.module';
+import { ActivationModule } from './activation/activation.module';
+import { AdminMetricsModule } from './admin-metrics/admin-metrics.module';
 
 @Module({
   imports: [
@@ -49,6 +56,10 @@ import { TasksModule } from './tasks/tasks.module';
         License,
         Contact,
         Task,
+        AffiliateProfile,
+        AffiliateEvents,
+        AffiliateUserPerformance,
+        AffiliateVisitor,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
@@ -61,6 +72,9 @@ import { TasksModule } from './tasks/tasks.module';
     OnboardingModule,
     ContactsModule,
     TasksModule,
+    AffiliatesModule,
+    ActivationModule,
+    AdminMetricsModule,
   ],
   controllers: [AppController],
   providers: [

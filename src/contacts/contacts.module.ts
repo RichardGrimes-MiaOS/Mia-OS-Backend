@@ -3,9 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ContactsService } from './contacts.service';
 import { ContactsController } from './contacts.controller';
 import { Contact } from './entities/contact.entity';
+import { ActivationModule } from '../activation/activation.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Contact])],
+  imports: [TypeOrmModule.forFeature([Contact]), ActivationModule],
   providers: [ContactsService],
   controllers: [ContactsController],
   exports: [ContactsService],

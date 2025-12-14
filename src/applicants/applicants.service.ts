@@ -15,6 +15,11 @@ import { UpdateApplicantStatusDto } from './dto/update-applicant-status.dto';
 import { EmailService } from '../email/email.service';
 import { AuthService } from '../auth/auth.service';
 import { User, UserRole } from '../users/entities/user.entity';
+import { AffiliateProfile } from '../affiliates/entities/affiliate-profile.entity';
+import { AffiliateEvents } from '../affiliates/entities/affiliate-events.entity';
+import { AffiliateUserPerformance } from '../affiliates/entities/affiliate-user-performance.entity';
+import { ActivationService } from '../activation/activation.service';
+import { ActivationActionType } from '../users/enums/activation-action-type.enum';
 
 @Injectable()
 export class ApplicantsService {
@@ -23,9 +28,16 @@ export class ApplicantsService {
     private readonly applicantRepository: Repository<Applicant>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(AffiliateProfile)
+    private readonly affiliateProfileRepository: Repository<AffiliateProfile>,
+    @InjectRepository(AffiliateEvents)
+    private readonly affiliateEventsRepository: Repository<AffiliateEvents>,
+    @InjectRepository(AffiliateUserPerformance)
+    private readonly affiliateUserPerformanceRepository: Repository<AffiliateUserPerformance>,
     private readonly emailService: EmailService,
     @Inject(forwardRef(() => AuthService))
     private readonly authService: AuthService,
+    private readonly activationService: ActivationService,
   ) {}
 
   async create(createApplicantDto: CreateApplicantDto): Promise<Applicant> {
@@ -58,6 +70,16 @@ export class ApplicantsService {
       });
 
       const savedApplicant = await this.applicantRepository.save(applicant);
+
+      // Track affiliate signup if referral code provided (for AffiliateProfile)
+      if (createApplicantDto.referral_code) {
+        await this.trackAffiliateSignup(createApplicantDto.referral_code);
+      }
+
+      // Track affiliate user signup if referral link provided (for affiliate_only users)
+      if (createApplicantDto.referral_link) {
+        await this.trackAffiliateUserSignup(createApplicantDto.referral_link);
+      }
 
       // Send confirmation email asynchronously (don't wait for it)
       this.emailService
@@ -216,6 +238,16 @@ export class ApplicantsService {
       ) {
         // Pass the saved applicant to ensure updatedById is persisted
         await this.createUserFromApplicant(savedApplicant);
+
+        // Track affiliate conversion if applicant has referral code (for AffiliateProfile)
+        if (savedApplicant.referral_code) {
+          await this.trackAffiliateConversion(savedApplicant.referral_code);
+        }
+
+        // Track affiliate user conversion if applicant has referral link (for affiliate_only users)
+        if (savedApplicant.referral_link) {
+          await this.trackAffiliateUserConversion(savedApplicant.referral_link);
+        }
       }
 
       // Reload applicant with relations to return complete data
@@ -242,9 +274,10 @@ export class ApplicantsService {
       );
       console.log(temporaryPassword);
 
-      // Copy isLicensed from applicant to user
+      // Copy isLicensed from applicant to user and set approved_at
       await this.userRepository.update(user.id, {
         isLicensed: applicant.isLicensed,
+        approved_at: new Date(),
       });
 
       // Link applicant to created user - only update userId without overwriting other fields
@@ -320,5 +353,231 @@ export class ApplicantsService {
       accepted,
       rejected,
     };
+  }
+
+  /**
+   * Track affiliate signup when applicant submits application with referral code
+   */
+  private async trackAffiliateSignup(referralCode: string): Promise<void> {
+    try {
+      // Find affiliate profile by referral code
+      const profile = await this.affiliateProfileRepository.findOne({
+        where: { referral_code: referralCode },
+        relations: ['events'],
+      });
+
+      if (!profile) {
+        console.warn(
+          `[ApplicantsService] Invalid referral code: ${referralCode}`,
+        );
+        return;
+      }
+
+      // Get or create AffiliateEvents record
+      let events: AffiliateEvents | null = profile.events;
+      if (!events) {
+        events = await this.affiliateEventsRepository.findOne({
+          where: { affiliate_profile_id: profile.id },
+        });
+      }
+
+      if (!events) {
+        // Create initial events record if it doesn't exist
+        events = this.affiliateEventsRepository.create({
+          affiliate_profile_id: profile.id,
+          total_clicks: 0,
+          total_unique_visitors: 0,
+          total_signups: 0,
+        });
+      }
+
+      // Increment total_signups
+      events.total_signups += 1;
+
+      await this.affiliateEventsRepository.save(events);
+
+      console.log(
+        `[ApplicantsService] Tracked signup for affiliate ${profile.id} (${profile.name}). Total signups: ${events.total_signups}`,
+      );
+    } catch (error) {
+      // Log error but don't fail the applicant creation
+      console.error(
+        `[ApplicantsService] Failed to track affiliate signup for referral code ${referralCode}:`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Track affiliate conversion when applicant is accepted (unlocks onboarding)
+   */
+  private async trackAffiliateConversion(referralCode: string): Promise<void> {
+    try {
+      // Find affiliate profile by referral code
+      const profile = await this.affiliateProfileRepository.findOne({
+        where: { referral_code: referralCode },
+        relations: ['events'],
+      });
+
+      if (!profile) {
+        console.warn(
+          `[ApplicantsService] Invalid referral code for conversion: ${referralCode}`,
+        );
+        return;
+      }
+
+      // Get or create AffiliateEvents record
+      let events: AffiliateEvents | null = profile.events;
+      if (!events) {
+        events = await this.affiliateEventsRepository.findOne({
+          where: { affiliate_profile_id: profile.id },
+        });
+      }
+
+      if (!events) {
+        // Create initial events record if it doesn't exist
+        events = this.affiliateEventsRepository.create({
+          affiliate_profile_id: profile.id,
+          total_clicks: 0,
+          total_unique_visitors: 0,
+          total_signups: 0,
+          total_conversions: 0,
+        });
+      }
+
+      // Increment total_conversions
+      events.total_conversions += 1;
+
+      await this.affiliateEventsRepository.save(events);
+
+      console.log(
+        `[ApplicantsService] Tracked conversion for affiliate ${profile.id} (${profile.name}). Total conversions: ${events.total_conversions}`,
+      );
+    } catch (error) {
+      // Log error but don't fail the status update
+      console.error(
+        `[ApplicantsService] Failed to track affiliate conversion for referral code ${referralCode}:`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Track affiliate user signup when applicant submits application with referral link
+   */
+  private async trackAffiliateUserSignup(referralLink: string): Promise<void> {
+    try {
+      // Find affiliate user by referral link
+      const user = await this.userRepository.findOne({
+        where: { referral_link: referralLink },
+        relations: ['performance'],
+      });
+
+      if (!user) {
+        console.warn(
+          `[ApplicantsService] Invalid referral link: ${referralLink}`,
+        );
+        return;
+      }
+
+      // Get or create AffiliateUserPerformance record
+      let performance: AffiliateUserPerformance | null = user.performance;
+      if (!performance) {
+        performance = await this.affiliateUserPerformanceRepository.findOne({
+          where: { user_id: user.id },
+        });
+      }
+
+      if (!performance) {
+        // Create initial performance record if it doesn't exist
+        performance = this.affiliateUserPerformanceRepository.create({
+          user_id: user.id,
+          referrals_clicks: 0,
+          referrals_made: 0,
+          referrals_converted: 0,
+        });
+      }
+
+      // Check if this is the first referral signup
+      const isFirstSignup = performance.referrals_made === 0;
+
+      // Increment referrals_made
+      performance.referrals_made += 1;
+
+      await this.affiliateUserPerformanceRepository.save(performance);
+
+      // Trigger activation on first referral signup for affiliate_only users
+      if (isFirstSignup) {
+        await this.activationService.triggerActivation(
+          user.id,
+          ActivationActionType.FIRST_REFERRAL_SIGNUP,
+        );
+      }
+
+      console.log(
+        `[ApplicantsService] Tracked signup for affiliate user ${user.id} (${user.firstName} ${user.lastName}). Total referrals made: ${performance.referrals_made}`,
+      );
+    } catch (error) {
+      // Log error but don't fail the applicant creation
+      console.error(
+        `[ApplicantsService] Failed to track affiliate user signup for referral link ${referralLink}:`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Track affiliate user conversion when applicant is accepted (unlocks onboarding)
+   */
+  private async trackAffiliateUserConversion(
+    referralLink: string,
+  ): Promise<void> {
+    try {
+      // Find affiliate user by referral link
+      const user = await this.userRepository.findOne({
+        where: { referral_link: referralLink },
+        relations: ['performance'],
+      });
+
+      if (!user) {
+        console.warn(
+          `[ApplicantsService] Invalid referral link for conversion: ${referralLink}`,
+        );
+        return;
+      }
+
+      // Get or create AffiliateUserPerformance record
+      let performance: AffiliateUserPerformance | null = user.performance;
+      if (!performance) {
+        performance = await this.affiliateUserPerformanceRepository.findOne({
+          where: { user_id: user.id },
+        });
+      }
+
+      if (!performance) {
+        // Create initial performance record if it doesn't exist
+        performance = this.affiliateUserPerformanceRepository.create({
+          user_id: user.id,
+          referrals_clicks: 0,
+          referrals_made: 0,
+          referrals_converted: 0,
+        });
+      }
+
+      // Increment referrals_converted
+      performance.referrals_converted += 1;
+
+      await this.affiliateUserPerformanceRepository.save(performance);
+
+      console.log(
+        `[ApplicantsService] Tracked conversion for affiliate user ${user.id} (${user.firstName} ${user.lastName}). Total conversions: ${performance.referrals_converted}`,
+      );
+    } catch (error) {
+      // Log error but don't fail the status update
+      console.error(
+        `[ApplicantsService] Failed to track affiliate user conversion for referral link ${referralLink}:`,
+        error,
+      );
+    }
   }
 }

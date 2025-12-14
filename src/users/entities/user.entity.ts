@@ -8,12 +8,15 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  OneToOne,
 } from 'typeorm';
+import { ActivationActionType } from '../enums/activation-action-type.enum';
 
 export enum UserRole {
   APPLICANT = 'applicant',
   AGENT = 'agent',
   AFFILIATE = 'affiliate',
+  AFFILIATE_ONLY = 'affiliate_only',
   ADMIN = 'admin',
   SUPER_ADMIN = 'super-admin',
 }
@@ -92,6 +95,41 @@ export class User {
 
   @OneToMany('Contact', 'user')
   contacts: any[];
+
+  @Column({ type: 'uuid', nullable: true })
+  affiliate_profile_id?: string;
+
+  @OneToOne('AffiliateProfile', 'user', { nullable: true })
+  @JoinColumn({ name: 'affiliate_profile_id' })
+  affiliateProfile?: any;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  referral_link?: string;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  qr_code_url?: string;
+
+  @OneToOne('AffiliateUserPerformance', 'user', { nullable: true })
+  performance?: any;
+
+  // Activation tracking fields
+  @Column({ type: 'timestamp', nullable: true })
+  approved_at?: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  activated_at?: Date;
+
+  @Column({ type: 'integer', nullable: true })
+  time_to_activation?: number;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  activation_source?: string;
+
+  @Column({ type: 'integer', nullable: true })
+  activation_cadence_day?: number;
+
+  @Column({ type: 'enum', enum: ActivationActionType, nullable: true })
+  activation_action_type?: ActivationActionType;
 
   @CreateDateColumn()
   createdAt: Date;
