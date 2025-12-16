@@ -29,6 +29,8 @@ import { CompleteAffiliateOnboardingDto } from './dto/complete-affiliate-onboard
 import { generateReferralCode } from '../affiliates/utils/generate-referral-code';
 import { generateAndUploadQrCode } from '../affiliates/utils/generate-qr-code';
 import { S3Service } from './services/s3.service';
+import { OnboardingStepsService } from './services/onboarding-steps.service';
+import { OnboardingStepKey } from './entities/user-onboarding-step.entity';
 
 @Injectable()
 export class OnboardingService {
@@ -51,6 +53,7 @@ export class OnboardingService {
     private readonly affiliateProfilesService: AffiliateProfilesService,
     private readonly affiliateUserPerformanceService: AffiliateUserPerformanceService,
     private readonly s3Service: S3Service,
+    private readonly onboardingStepsService: OnboardingStepsService,
   ) {}
 
   // ==================== LICENSING TRAINING ====================
@@ -85,7 +88,16 @@ export class OnboardingService {
       ...dto,
     });
 
-    return await this.licensingTrainingRepository.save(training);
+    const saved = await this.licensingTrainingRepository.save(training);
+
+    // Step tracking: Standard path - licensed_check → exam_scheduled
+    await this.onboardingStepsService.completeAndProgress(
+      userId,
+      OnboardingStepKey.LICENSED_CHECK,
+      OnboardingStepKey.EXAM_SCHEDULED,
+    );
+
+    return saved;
   }
 
   async getLicensingTraining(userId: string): Promise<LicensingTraining> {
@@ -166,9 +178,37 @@ export class OnboardingService {
 
     const saved = await this.licensingExamRepository.save(exam);
 
-    // If result is 'passed', update user's onboarding status
-    if (dto.result === ExamResult.PASSED) {
-      await this.updateUserOnboardingStatus(userId, OnboardingStatus.LICENSED);
+    // Step tracking: exam_scheduled → license_uploaded
+    const now = new Date();
+    const examDate = dto.examDate ? new Date(dto.examDate) : null;
+
+    if (dto.isScheduled && examDate) {
+      if (examDate > now) {
+        // Future exam: Complete exam_scheduled step
+        await this.onboardingStepsService.completeStep(
+          userId,
+          OnboardingStepKey.EXAM_SCHEDULED,
+        );
+      } else if (dto.result === ExamResult.PASSED) {
+        // Exam passed (date in past): Create completed license_uploaded step and enter e&o_uploaded
+        const examScheduledStep = await this.onboardingStepsService.getStep(
+          userId,
+          OnboardingStepKey.EXAM_SCHEDULED,
+        );
+        const enteredAt = examScheduledStep?.completedAt || now;
+
+        await this.onboardingStepsService.createCompletedStep(
+          userId,
+          OnboardingStepKey.LICENSE_UPLOADED,
+          enteredAt,
+          now,
+        );
+        await this.onboardingStepsService.enterStep(
+          userId,
+          OnboardingStepKey.EO_UPLOADED,
+        );
+        await this.updateUserOnboardingStatus(userId, OnboardingStatus.LICENSED);
+      }
     }
 
     return saved;
@@ -255,6 +295,13 @@ export class OnboardingService {
     });
 
     const saved = await this.eAndOInsuranceRepository.save(insurance);
+
+    // Step tracking: e&o_uploaded → activation_unlocked
+    await this.onboardingStepsService.completeAndProgress(
+      userId,
+      OnboardingStepKey.EO_UPLOADED,
+      OnboardingStepKey.ACTIVATION_UNLOCKED,
+    );
 
     // Update user onboarding status to pending_activation
     await this.updateUserOnboardingStatus(
@@ -365,6 +412,13 @@ export class OnboardingService {
       expirationDate: new Date(dto.eAndOExpirationDate),
     });
     await this.eAndOInsuranceRepository.save(eAndO);
+
+    // Step tracking: Fast track - license_uploaded → e&o_uploaded
+    await this.onboardingStepsService.completeAndProgress(
+      userId,
+      OnboardingStepKey.LICENSE_UPLOADED,
+      OnboardingStepKey.EO_UPLOADED,
+    );
 
     // Update user onboarding status to pending_activation
     await this.updateUserOnboardingStatus(
@@ -572,8 +626,9 @@ export class OnboardingService {
   }
 
   /**
-   * Admin endpoint to activate a user after reviewing their onboarding
-   * This promotes the user from applicant to agent and marks onboarding complete
+   * Admin reviews activation request (approve or reject)
+   * - APPROVE: Marks onboarding as complete, sends welcome email
+   * - REJECT: Sends user back to in_progress, sends rejection email with notes
    */
   async activateUser(
     userId: string,
@@ -589,7 +644,7 @@ export class OnboardingService {
     // Verify user is in pending_activation status
     if (user.onboardingStatus !== OnboardingStatus.PENDING_ACTIVATION) {
       throw new BadRequestException(
-        `User onboarding status must be 'pending_activation' to activate. Current status: ${user.onboardingStatus}`,
+        `User onboarding status must be 'pending_activation' to review. Current status: ${user.onboardingStatus}`,
       );
     }
 
@@ -608,30 +663,78 @@ export class OnboardingService {
       );
     }
 
-    // Update user: promote to AGENT role and mark onboarding complete
-    await this.userRepository.update(userId, {
-      role: UserRole.AGENT,
-      onboardingStatus: OnboardingStatus.ONBOARDED,
-    });
+    // Handle APPROVAL
+    if (dto.status === ActivationStatus.APPROVED) {
+      // Calculate time to activation (seconds from approved_at to activation)
+      const approvedAt = user.approved_at;
+      const activatedAt = new Date();
+      const timeToActivation = approvedAt
+        ? Math.floor((activatedAt.getTime() - approvedAt.getTime()) / 1000)
+        : null;
 
-    // Update activation request
-    await this.activationRequestRepository.update(activationRequest.id, {
-      status: ActivationStatus.APPROVED,
-      approvedBy: adminId,
-      approvedAt: new Date(),
-      notes: dto.notes,
-    });
+      // Update user: mark onboarding complete and set activation timestamp
+      const updateData: any = {
+        onboardingStatus: OnboardingStatus.ONBOARDED,
+        activated_at: activatedAt,
+      };
+      if (timeToActivation !== null) {
+        updateData.time_to_activation = timeToActivation;
+      }
+      await this.userRepository.update(userId, updateData);
 
-    console.log(
-      `[OnboardingService] User ${userId} activated by admin ${adminId}. Promoted to AGENT role.`,
-    );
+      // Update activation request
+      await this.activationRequestRepository.update(activationRequest.id, {
+        status: ActivationStatus.APPROVED,
+        approvedBy: adminId,
+        approvedAt: activatedAt,
+        notes: dto.notes,
+      });
 
-    // Send onboarded confirmation email to the agent
-    await this.emailService.sendOnboardedEmail({
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-    });
+      console.log(
+        `[OnboardingService] User ${userId} APPROVED by admin ${adminId}. Onboarding complete.`,
+      );
+
+      // Step tracking: Complete activation_unlocked step (end of funnel)
+      await this.onboardingStepsService.completeStep(
+        userId,
+        OnboardingStepKey.ACTIVATION_UNLOCKED,
+      );
+
+      // Send onboarded confirmation email
+      await this.emailService.sendOnboardedEmail({
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      });
+    }
+    // Handle REJECTION
+    else if (dto.status === ActivationStatus.REJECTED) {
+      // Update user: send back to in_progress, clear activation timestamp using raw SQL
+      await this.userRepository.query(
+        `UPDATE users SET onboarding_status = $1, activated_at = NULL, time_to_activation = NULL WHERE id = $2`,
+        [OnboardingStatus.IN_PROGRESS, userId],
+      );
+
+      // Update activation request
+      await this.activationRequestRepository.update(activationRequest.id, {
+        status: ActivationStatus.REJECTED,
+        approvedBy: adminId,
+        approvedAt: new Date(),
+        notes: dto.notes,
+      });
+
+      console.log(
+        `[OnboardingService] User ${userId} REJECTED by admin ${adminId}. Sent back to in_progress.`,
+      );
+
+      // Send rejection email with admin notes
+      await this.emailService.sendActivationRejectedEmail({
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        notes: dto.notes || 'Please review your submission and resubmit.',
+      });
+    }
 
     // Reload user and activation request with updated data
     const updatedUser = await this.userRepository.findOne({
@@ -647,6 +750,50 @@ export class OnboardingService {
       user: updatedUser!,
       activationRequest: updatedActivationRequest!,
     };
+  }
+
+  // ==================== USER ONBOARDING STATUS UPDATE ====================
+
+  /**
+   * Allow user (AGENT role) to update their own onboarding status
+   */
+  async updateOnboardingStatus(
+    userId: string,
+    status: OnboardingStatus,
+  ): Promise<User> {
+    // Check if user exists
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Verify user has AGENT role
+    if (user.role !== UserRole.AGENT) {
+      throw new BadRequestException('Only agents can update their onboarding status');
+    }
+
+    // Update status
+    await this.updateUserOnboardingStatus(userId, status);
+
+    // Step tracking: Fast track path - licensed_check → license_uploaded
+    if (status === OnboardingStatus.LICENSED) {
+      await this.onboardingStepsService.completeAndProgress(
+        userId,
+        OnboardingStepKey.LICENSED_CHECK,
+        OnboardingStepKey.LICENSE_UPLOADED,
+      );
+    }
+
+    // Reload and return user with updated data
+    const updatedUser = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    console.log(
+      `[OnboardingService] User ${userId} updated their onboarding status to ${status}`,
+    );
+
+    return updatedUser!;
   }
 
   // ==================== HELPER METHODS ====================

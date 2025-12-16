@@ -20,6 +20,8 @@ import { AffiliateEvents } from '../affiliates/entities/affiliate-events.entity'
 import { AffiliateUserPerformance } from '../affiliates/entities/affiliate-user-performance.entity';
 import { ActivationService } from '../activation/activation.service';
 import { ActivationActionType } from '../users/enums/activation-action-type.enum';
+import { OnboardingStepsService } from '../onboarding/services/onboarding-steps.service';
+import { OnboardingStepKey } from '../onboarding/entities/user-onboarding-step.entity';
 
 @Injectable()
 export class ApplicantsService {
@@ -38,6 +40,7 @@ export class ApplicantsService {
     @Inject(forwardRef(() => AuthService))
     private readonly authService: AuthService,
     private readonly activationService: ActivationService,
+    private readonly onboardingStepsService: OnboardingStepsService,
   ) {}
 
   async create(createApplicantDto: CreateApplicantDto): Promise<Applicant> {
@@ -275,9 +278,10 @@ export class ApplicantsService {
       console.log(temporaryPassword);
 
       // Copy isLicensed from applicant to user and set approved_at
+      const approvedAt = new Date();
       await this.userRepository.update(user.id, {
         isLicensed: applicant.isLicensed,
-        approved_at: new Date(),
+        approved_at: approvedAt,
       });
 
       // Link applicant to created user - only update userId without overwriting other fields
@@ -287,6 +291,22 @@ export class ApplicantsService {
 
       console.log(
         `[ApplicantsService] Linked applicant ${applicant.id} to user ${user.id}`,
+      );
+
+      // Track onboarding step: account_created (instant step - both entered and completed)
+      // Use approved_at as the timestamp for when onboarding actually starts
+      await this.onboardingStepsService.createCompletedStep(
+        user.id,
+        OnboardingStepKey.ACCOUNT_CREATED,
+        approvedAt,
+        approvedAt,
+      );
+
+      // Auto-progress to licensed_check step with same timestamp
+      await this.onboardingStepsService.enterStep(
+        user.id,
+        OnboardingStepKey.LICENSED_CHECK,
+        approvedAt,
       );
 
       // Send welcome email with temporary credentials

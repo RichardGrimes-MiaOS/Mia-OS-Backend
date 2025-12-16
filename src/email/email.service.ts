@@ -35,6 +35,13 @@ export interface SendOnboardedEmailDto {
   lastName: string;
 }
 
+export interface SendActivationRejectedEmailDto {
+  email: string;
+  firstName: string;
+  lastName: string;
+  notes?: string;
+}
+
 @Injectable()
 export class EmailService {
   private sesClient: SESClient;
@@ -435,6 +442,98 @@ We're excited to have you on board! Your dedication during the onboarding proces
 Go to Dashboard: ${dashboardUrl}
 
 If you have any questions, please contact your team lead or support.
+
+© ${new Date().getFullYear()} Make Income Anywhere. All rights reserved.
+    `.trim();
+  }
+
+  /**
+   * Send activation rejected email to agent
+   */
+  async sendActivationRejectedEmail(
+    data: SendActivationRejectedEmailDto,
+  ): Promise<void> {
+    try {
+      const htmlTemplate = this.loadEmailTemplate('activation-rejected.html');
+      const dashboardUrl =
+        process.env.AGENT_DASHBOARD_URL || 'https://app.makeincomeanywhere.com';
+
+      const htmlBody = this.replaceTemplateVariables(htmlTemplate, {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        notes: data.notes || 'Please review your submission and resubmit.',
+        dashboardUrl,
+        currentYear: new Date().getFullYear().toString(),
+      });
+
+      const textBody = this.generateActivationRejectedTextVersion(
+        data,
+        dashboardUrl,
+      );
+
+      const command = new SendEmailCommand({
+        Source: this.fromEmail,
+        Destination: {
+          ToAddresses: [data.email],
+        },
+        Message: {
+          Subject: {
+            Data: 'Activation Request Update - MIA',
+            Charset: 'UTF-8',
+          },
+          Body: {
+            Html: {
+              Data: htmlBody,
+              Charset: 'UTF-8',
+            },
+            Text: {
+              Data: textBody,
+              Charset: 'UTF-8',
+            },
+          },
+        },
+      });
+
+      await this.sesClient.send(command);
+      console.log(`Activation rejected email sent to ${data.email}`);
+    } catch (error) {
+      console.error('Failed to send activation rejected email via SES:', error);
+      // Don't throw error - log for monitoring
+    }
+  }
+
+  /**
+   * Generate plain text version of the activation rejected email
+   */
+  private generateActivationRejectedTextVersion(
+    data: SendActivationRejectedEmailDto,
+    dashboardUrl: string,
+  ): string {
+    return `
+ACTIVATION REQUEST UPDATE
+
+Hi ${data.firstName},
+
+We've reviewed your activation request, and unfortunately we need you to make some adjustments before we can approve your activation.
+
+CURRENT STATUS:
+- Activation Status: ⚠️ Requires Changes
+- Onboarding Status: In Progress
+
+REVIEW FEEDBACK:
+${data.notes || 'Please review your submission and resubmit.'}
+
+WHAT'S NEXT?
+📝 Review the feedback above carefully
+🔧 Make the necessary adjustments
+📤 Resubmit your activation request
+✅ We'll review it as soon as possible
+
+Don't be discouraged! This is a normal part of the process. Review the feedback, make the necessary updates, and resubmit. We're here to help you succeed!
+
+Go to Dashboard: ${dashboardUrl}
+
+If you have any questions about the feedback, please contact your team lead or support.
 
 © ${new Date().getFullYear()} Make Income Anywhere. All rights reserved.
     `.trim();

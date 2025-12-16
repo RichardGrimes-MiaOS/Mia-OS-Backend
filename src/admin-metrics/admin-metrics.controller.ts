@@ -15,4 +15,19 @@ export class AdminMetricsController {
   async getActivationRate() {
     return await this.adminMetricsService.getActivationRate();
   }
+
+  @Get('step-conversions')
+  async getStepConversions() {
+    return await this.adminMetricsService.getStepConversionMetrics();
+  }
+
+  @Get('stalled-users')
+  async getStalledUsers() {
+    return await this.adminMetricsService.getStalledUsers();
+  }
+
+  @Get('affiliate-performance')
+  async getAffiliatePerformance() {
+    return await this.adminMetricsService.getAffiliatePerformance();
+  }
 }

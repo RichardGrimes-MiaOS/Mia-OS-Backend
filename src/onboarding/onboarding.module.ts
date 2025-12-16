@@ -8,9 +8,11 @@ import { EAndOInsurance } from './entities/e-and-o-insurance.entity';
 import { ActivationRequest } from './entities/activation-request.entity';
 import { LicensedAgentIntake } from './entities/licensed-agent-intake.entity';
 import { License } from './entities/license.entity';
+import { UserOnboardingStep } from './entities/user-onboarding-step.entity';
 import { User } from '../users/entities/user.entity';
 import { EmailModule } from '../email/email.module';
 import { S3Service } from './services/s3.service';
+import { OnboardingStepsService } from './services/onboarding-steps.service';
 import { AffiliatesModule } from '../affiliates/affiliates.module';
 
 @Module({
@@ -23,12 +25,13 @@ import { AffiliatesModule } from '../affiliates/affiliates.module';
       LicensedAgentIntake,
       License,
       User,
+      UserOnboardingStep,
     ]),
     EmailModule,
     AffiliatesModule,
   ],
   controllers: [OnboardingController],
-  providers: [OnboardingService, S3Service],
-  exports: [OnboardingService],
+  providers: [OnboardingService, S3Service, OnboardingStepsService],
+  exports: [OnboardingService, OnboardingStepsService],
 })
 export class OnboardingModule {}

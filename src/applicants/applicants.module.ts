@@ -10,6 +10,7 @@ import { AffiliateUserPerformance } from '../affiliates/entities/affiliate-user-
 import { EmailModule } from '../email/email.module';
 import { AuthModule } from '../auth/auth.module';
 import { ActivationModule } from '../activation/activation.module';
+import { OnboardingModule } from '../onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { ActivationModule } from '../activation/activation.module';
     EmailModule,
     forwardRef(() => AuthModule),
     ActivationModule,
+    OnboardingModule,
   ],
   controllers: [ApplicantsController],
   providers: [ApplicantsService],

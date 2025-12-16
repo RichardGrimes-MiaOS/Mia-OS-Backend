@@ -20,6 +20,7 @@ import { CreateLicensedAgentIntakeDto } from './dto/create-licensed-agent-intake
 import { ActivateUserDto } from './dto/activate-user.dto';
 import { PresignedUrlRequestDto } from './dto/presigned-url-request.dto';
 import { CompleteAffiliateOnboardingDto } from './dto/complete-affiliate-onboarding.dto';
+import { UpdateOnboardingStatusDto } from './dto/update-onboarding-status.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -156,6 +157,22 @@ export class OnboardingController {
     return await this.onboardingService.completeAffiliateOnboarding(
       user.id,
       dto,
+    );
+  }
+
+  // ==================== UPDATE ONBOARDING STATUS ====================
+
+  @Patch('status')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.AGENT)
+  @HttpCode(HttpStatus.OK)
+  async updateOnboardingStatus(
+    @CurrentUser() user: User,
+    @Body() dto: UpdateOnboardingStatusDto,
+  ) {
+    return await this.onboardingService.updateOnboardingStatus(
+      user.id,
+      dto.status,
     );
   }
 
