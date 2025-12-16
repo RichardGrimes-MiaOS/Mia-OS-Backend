@@ -31,6 +31,8 @@ import { generateAndUploadQrCode } from '../affiliates/utils/generate-qr-code';
 import { S3Service } from './services/s3.service';
 import { OnboardingStepsService } from './services/onboarding-steps.service';
 import { OnboardingStepKey } from './entities/user-onboarding-step.entity';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { EventType } from '../analytics/entities/user-event.entity';
 
 @Injectable()
 export class OnboardingService {
@@ -54,6 +56,7 @@ export class OnboardingService {
     private readonly affiliateUserPerformanceService: AffiliateUserPerformanceService,
     private readonly s3Service: S3Service,
     private readonly onboardingStepsService: OnboardingStepsService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   // ==================== LICENSING TRAINING ====================
@@ -150,6 +153,20 @@ export class OnboardingService {
       );
     }
 
+    if (dto.resultDocument) {
+      // Track document_upload event
+      await this.analyticsService.trackEvent({
+        userId: user.id,
+        eventType: EventType.DOCUMENT_UPLOADED,
+        role: user.role,
+        affiliateId: user.affiliate_profile_id,
+        metadata: {
+          documentType: 'licensing_exam',
+          s3Key: dto.resultDocument,
+        },
+      });
+    }
+
     // Check if exam record already exists (we only keep the latest)
     const existing = await this.licensingExamRepository.findOne({
       where: { userId },
@@ -207,7 +224,10 @@ export class OnboardingService {
           userId,
           OnboardingStepKey.EO_UPLOADED,
         );
-        await this.updateUserOnboardingStatus(userId, OnboardingStatus.LICENSED);
+        await this.updateUserOnboardingStatus(
+          userId,
+          OnboardingStatus.LICENSED,
+        );
       }
     }
 
@@ -295,6 +315,20 @@ export class OnboardingService {
     });
 
     const saved = await this.eAndOInsuranceRepository.save(insurance);
+
+    if (saved.documentPath) {
+      // Track document_upload event
+      await this.analyticsService.trackEvent({
+        userId: user.id,
+        eventType: EventType.DOCUMENT_UPLOADED,
+        role: user.role,
+        affiliateId: user.affiliate_profile_id,
+        metadata: {
+          documentType: 'e_and_o_insurance',
+          s3Key: dto.documentPath,
+        },
+      });
+    }
 
     // Step tracking: e&o_uploaded → activation_unlocked
     await this.onboardingStepsService.completeAndProgress(
@@ -412,6 +446,20 @@ export class OnboardingService {
       expirationDate: new Date(dto.eAndOExpirationDate),
     });
     await this.eAndOInsuranceRepository.save(eAndO);
+
+    if (dto.eAndODocumentPath) {
+      // Track document_upload event
+      await this.analyticsService.trackEvent({
+        userId: user.id,
+        eventType: EventType.DOCUMENT_UPLOADED,
+        role: user.role,
+        affiliateId: user.affiliate_profile_id,
+        metadata: {
+          documentType: 'e_and_o_insurance',
+          s3Key: dto.eAndODocumentPath,
+        },
+      });
+    }
 
     // Step tracking: Fast track - license_uploaded → e&o_uploaded
     await this.onboardingStepsService.completeAndProgress(
@@ -700,6 +748,21 @@ export class OnboardingService {
         OnboardingStepKey.ACTIVATION_UNLOCKED,
       );
 
+      // Track admin approval event
+      const admin = await this.userRepository.findOne({
+        where: { id: adminId },
+      });
+      await this.analyticsService.trackEvent({
+        userId: adminId,
+        eventType: EventType.ADMIN_APPROVED,
+        role: admin?.role,
+        metadata: {
+          targetUserId: userId,
+          targetUserEmail: user.email,
+          notes: dto.notes,
+        },
+      });
+
       // Send onboarded confirmation email
       await this.emailService.sendOnboardedEmail({
         email: user.email,
@@ -726,6 +789,21 @@ export class OnboardingService {
       console.log(
         `[OnboardingService] User ${userId} REJECTED by admin ${adminId}. Sent back to in_progress.`,
       );
+
+      // Track admin rejection event
+      const admin = await this.userRepository.findOne({
+        where: { id: adminId },
+      });
+      await this.analyticsService.trackEvent({
+        userId: adminId,
+        eventType: EventType.ADMIN_REJECTED,
+        role: admin?.role,
+        metadata: {
+          targetUserId: userId,
+          targetUserEmail: user.email,
+          notes: dto.notes,
+        },
+      });
 
       // Send rejection email with admin notes
       await this.emailService.sendActivationRejectedEmail({
@@ -769,7 +847,9 @@ export class OnboardingService {
 
     // Verify user has AGENT role
     if (user.role !== UserRole.AGENT) {
-      throw new BadRequestException('Only agents can update their onboarding status');
+      throw new BadRequestException(
+        'Only agents can update their onboarding status',
+      );
     }
 
     // Update status

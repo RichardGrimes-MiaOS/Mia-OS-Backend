@@ -29,6 +29,8 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmEmailDto } from './dto/confirm-email.dto';
 import { ResendConfirmationDto } from './dto/resend-confirmation.dto';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { EventType } from '../analytics/entities/user-event.entity';
 
 @Injectable()
 export class AuthService {
@@ -40,6 +42,7 @@ export class AuthService {
     private configService: ConfigService,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private analyticsService: AnalyticsService,
   ) {
     this.cognitoClient = new CognitoIdentityProviderClient({
       region: this.configService.get<string>('AWS_REGION'),
@@ -178,7 +181,7 @@ export class AuthService {
         throw new UnauthorizedException('Invalid credentials');
       }
 
-      // Update lastLogin timestamp in database
+      // Update lastLogin timestamp and track login event
       try {
         const user = await this.userRepository.findOne({
           where: { email },
@@ -187,6 +190,14 @@ export class AuthService {
         if (user) {
           user.lastLogin = new Date();
           await this.userRepository.save(user);
+
+          // Track login event
+          await this.analyticsService.trackEvent({
+            userId: user.id,
+            eventType: EventType.LOGIN,
+            role: user.role,
+            affiliateId: user.affiliate_profile_id,
+          });
         }
       } catch (dbError) {
         // Log error but don't fail the login

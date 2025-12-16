@@ -5,6 +5,9 @@ import {
   UserOnboardingStep,
   OnboardingStepKey,
 } from '../entities/user-onboarding-step.entity';
+import { AnalyticsService } from '../../analytics/analytics.service';
+import { EventType } from '../../analytics/entities/user-event.entity';
+import { User } from '../../users/entities/user.entity';
 
 @Injectable()
 export class OnboardingStepsService {
@@ -13,6 +16,9 @@ export class OnboardingStepsService {
   constructor(
     @InjectRepository(UserOnboardingStep)
     private readonly userOnboardingStepRepository: Repository<UserOnboardingStep>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   /**
@@ -43,6 +49,18 @@ export class OnboardingStepsService {
     });
 
     const saved = await this.userOnboardingStepRepository.save(step);
+
+    // Get user for event tracking
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    // Track step_started event
+    await this.analyticsService.trackEvent({
+      userId,
+      eventType: EventType.STEP_STARTED,
+      role: user?.role,
+      affiliateId: user?.affiliate_profile_id,
+      metadata: { step: stepKey },
+    });
 
     this.logger.log(
       `User ${userId} entered step: ${stepKey} at ${enteredAt.toISOString()}`,
@@ -79,6 +97,18 @@ export class OnboardingStepsService {
 
     step.completedAt = completedAt;
     const updated = await this.userOnboardingStepRepository.save(step);
+
+    // Get user for event tracking
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    // Track step_completed event
+    await this.analyticsService.trackEvent({
+      userId,
+      eventType: EventType.STEP_COMPLETED,
+      role: user?.role,
+      affiliateId: user?.affiliate_profile_id,
+      metadata: { step: stepKey },
+    });
 
     this.logger.log(
       `User ${userId} completed step: ${stepKey} at ${completedAt.toISOString()}`,

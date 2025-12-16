@@ -14,6 +14,7 @@ import { EmailModule } from '../email/email.module';
 import { S3Service } from './services/s3.service';
 import { OnboardingStepsService } from './services/onboarding-steps.service';
 import { AffiliatesModule } from '../affiliates/affiliates.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { AffiliatesModule } from '../affiliates/affiliates.module';
     ]),
     EmailModule,
     AffiliatesModule,
+    AnalyticsModule,
   ],
   controllers: [OnboardingController],
   providers: [OnboardingService, S3Service, OnboardingStepsService],

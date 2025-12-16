@@ -22,6 +22,7 @@ import { AffiliateEvents } from './affiliates/entities/affiliate-events.entity';
 import { AffiliateUserPerformance } from './affiliates/entities/affiliate-user-performance.entity';
 import { AffiliateVisitor } from './affiliates/entities/affiliate-visitor.entity';
 import { UserOnboardingStep } from './onboarding/entities/user-onboarding-step.entity';
+import { UserEvent } from './analytics/entities/user-event.entity';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -62,6 +63,7 @@ import { AdminMetricsModule } from './admin-metrics/admin-metrics.module';
         AffiliateUserPerformance,
         AffiliateVisitor,
         UserOnboardingStep,
+        UserEvent,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',

@@ -76,6 +76,9 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   lastLogin?: Date;
 
+  @Column({ type: 'timestamp', nullable: true })
+  last_active_at?: Date;
+
   @Column({ type: 'boolean', default: false })
   isLicensed: boolean;
 
