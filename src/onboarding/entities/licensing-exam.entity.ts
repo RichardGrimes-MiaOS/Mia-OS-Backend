@@ -12,6 +12,7 @@ import { User } from '../../users/entities/user.entity';
 
 export enum ExamResult {
   PASSED = 'passed',
+  FAILED = 'failed',
 }
 
 @Entity('licensing_exam')
@@ -42,6 +43,9 @@ export class LicensingExam {
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   resultDocument?: string;
+
+  @Column({ type: 'int', default: 0 })
+  latestAttemptNumber: number;
 
   @CreateDateColumn()
   createdAt: Date;

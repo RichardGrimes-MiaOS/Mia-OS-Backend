@@ -4,8 +4,10 @@ import {
   Column,
   CreateDateColumn,
   Index,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
-import { UserRole } from '../../users/entities/user.entity';
+import { User, UserRole } from '../../users/entities/user.entity';
 
 export enum EventType {
   // Onboarding steps
@@ -15,6 +17,7 @@ export enum EventType {
   // User actions
   LOGIN = 'login',
   DOCUMENT_UPLOADED = 'document_uploaded',
+  ROLE_UPDATED = 'role_updated',
 
   // Affiliate tracking
   REFERRAL_CLICKED = 'referral_clicked',
@@ -35,6 +38,10 @@ export class UserEvent {
 
   @Column({ type: 'uuid', nullable: true })
   user_id: string;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'user_id' })
+  user?: User;
 
   @Column({ type: 'varchar', length: 50 })
   event_type: EventType;

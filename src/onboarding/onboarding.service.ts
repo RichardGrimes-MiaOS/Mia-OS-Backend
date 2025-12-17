@@ -8,10 +8,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { LicensingTraining } from './entities/licensing-training.entity';
 import { LicensingExam, ExamResult } from './entities/licensing-exam.entity';
+import { LicensingExamAttempt } from './entities/licensing-exam-attempt.entity';
 import { EAndOInsurance } from './entities/e-and-o-insurance.entity';
 import { ActivationRequest } from './entities/activation-request.entity';
 import { LicensedAgentIntake } from './entities/licensed-agent-intake.entity';
 import { License } from './entities/license.entity';
+import { OnboardingReviewSubmission, OnboardingReviewStatus } from './entities/onboarding-review-submission.entity';
 import { User, OnboardingStatus } from '../users/entities/user.entity';
 import { CreateLicensingTrainingDto } from './dto/create-licensing-training.dto';
 import { UpdateLicensingTrainingDto } from './dto/update-licensing-training.dto';
@@ -41,6 +43,8 @@ export class OnboardingService {
     private readonly licensingTrainingRepository: Repository<LicensingTraining>,
     @InjectRepository(LicensingExam)
     private readonly licensingExamRepository: Repository<LicensingExam>,
+    @InjectRepository(LicensingExamAttempt)
+    private readonly licensingExamAttemptRepository: Repository<LicensingExamAttempt>,
     @InjectRepository(EAndOInsurance)
     private readonly eAndOInsuranceRepository: Repository<EAndOInsurance>,
     @InjectRepository(ActivationRequest)
@@ -49,6 +53,8 @@ export class OnboardingService {
     private readonly licensedAgentIntakeRepository: Repository<LicensedAgentIntake>,
     @InjectRepository(License)
     private readonly licenseRepository: Repository<License>,
+    @InjectRepository(OnboardingReviewSubmission)
+    private readonly reviewSubmissionRepository: Repository<OnboardingReviewSubmission>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly emailService: EmailService,
@@ -92,6 +98,23 @@ export class OnboardingService {
     });
 
     const saved = await this.licensingTrainingRepository.save(training);
+
+    // Update user role to AGENT after completing licensing training
+    user.role = UserRole.AGENT;
+    await this.userRepository.save(user);
+
+    // Track role update event
+    await this.analyticsService.trackEvent({
+      userId: user.id,
+      eventType: EventType.ROLE_UPDATED,
+      role: UserRole.AGENT,
+      affiliateId: user.affiliate_profile_id,
+      metadata: {
+        previousRole: user.role,
+        updatedBy: 'system',
+        reason: 'licensing_training_completed',
+      },
+    });
 
     // Step tracking: Standard path - licensed_check → exam_scheduled
     await this.onboardingStepsService.completeAndProgress(
@@ -167,33 +190,48 @@ export class OnboardingService {
       });
     }
 
-    // Check if exam record already exists (we only keep the latest)
+    // Get current exam snapshot (if exists) to determine next attempt number
     const existing = await this.licensingExamRepository.findOne({
       where: { userId },
     });
 
+    const nextAttemptNumber = existing ? existing.latestAttemptNumber + 1 : 1;
+
+    // 1. Insert new attempt record (append-only history)
+    const attempt = this.licensingExamAttemptRepository.create({
+      user_id: userId,
+      attempt_number: nextAttemptNumber,
+      exam_date: dto.examDate,
+      result: dto.result,
+      result_screenshot: dto.resultDocument,
+      submitted_at: new Date(),
+    });
+    await this.licensingExamAttemptRepository.save(attempt);
+
+    // 2. Update or create snapshot record (current state)
+    let exam: LicensingExam;
     if (existing) {
-      // Update existing record instead of creating new one
-      Object.assign(existing, dto);
-      await this.licensingExamRepository.save(existing);
-
-      // If result is 'passed', update user's onboarding status
-      if (dto.result === ExamResult.PASSED) {
-        await this.updateUserOnboardingStatus(
-          userId,
-          OnboardingStatus.LICENSED,
-        );
-      }
-
-      return await this.getLicensingExam(userId);
+      // Update existing snapshot
+      existing.isScheduled = dto.isScheduled;
+      existing.examDate = dto.examDate ? new Date(dto.examDate) : undefined;
+      existing.result = dto.result;
+      existing.resultDocument = dto.resultDocument;
+      existing.latestAttemptNumber = nextAttemptNumber;
+      exam = await this.licensingExamRepository.save(existing);
+    } else {
+      // Create new snapshot
+      exam = this.licensingExamRepository.create({
+        userId,
+        isScheduled: dto.isScheduled,
+        examDate: dto.examDate ? new Date(dto.examDate) : undefined,
+        result: dto.result,
+        resultDocument: dto.resultDocument,
+        latestAttemptNumber: nextAttemptNumber,
+      });
+      exam = await this.licensingExamRepository.save(exam);
     }
 
-    const exam = this.licensingExamRepository.create({
-      userId,
-      ...dto,
-    });
-
-    const saved = await this.licensingExamRepository.save(exam);
+    const saved = exam;
 
     // Step tracking: exam_scheduled → license_uploaded
     const now = new Date();
@@ -277,6 +315,17 @@ export class OnboardingService {
     return await this.getLicensingExam(userId);
   }
 
+  async getLicensingExamAttempts(
+    userId: string,
+  ): Promise<LicensingExamAttempt[]> {
+    const attempts = await this.licensingExamAttemptRepository.find({
+      where: { user_id: userId },
+      order: { attempt_number: 'DESC' },
+    });
+
+    return attempts;
+  }
+
   // ==================== E&O INSURANCE ====================
 
   async createEAndOInsurance(
@@ -352,7 +401,7 @@ export class OnboardingService {
   async listEAndOInsurance(userId: string): Promise<EAndOInsurance[]> {
     return await this.eAndOInsuranceRepository.find({
       where: { userId },
-      relations: ['user', 'reviewer'],
+      relations: ['user'],
       order: { createdAt: 'DESC' },
     });
   }
@@ -360,7 +409,7 @@ export class OnboardingService {
   async getEAndOInsuranceById(id: string): Promise<EAndOInsurance> {
     const insurance = await this.eAndOInsuranceRepository.findOne({
       where: { id },
-      relations: ['user', 'reviewer'],
+      relations: ['user'],
     });
 
     if (!insurance) {
@@ -628,6 +677,32 @@ export class OnboardingService {
       throw new NotFoundException('User not found');
     }
 
+    // Determine next attempt number
+    const previousSubmissions = await this.reviewSubmissionRepository.find({
+      where: { user_id: userId },
+      order: { attempt_number: 'DESC' },
+      take: 1,
+    });
+    const nextAttemptNumber = previousSubmissions.length > 0
+      ? previousSubmissions[0].attempt_number + 1
+      : 1;
+
+    // Create frozen JSONB snapshot of onboarding state
+    const snapshot = await this.createOnboardingSnapshot(userId, isFastTrack);
+
+    // Create review submission record (append-only history)
+    const reviewSubmission = this.reviewSubmissionRepository.create({
+      user_id: userId,
+      attempt_number: nextAttemptNumber,
+      snapshot,
+      status: OnboardingReviewStatus.PENDING,
+    });
+    await this.reviewSubmissionRepository.save(reviewSubmission);
+
+    console.log(
+      `[OnboardingService] Created review submission attempt #${nextAttemptNumber} for user ${userId}`,
+    );
+
     // Create activation request
     const richardEmail =
       process.env.RICHARD_EMAIL || 'richard@makeincomeanywhere.com';
@@ -711,6 +786,12 @@ export class OnboardingService {
       );
     }
 
+    // Find the latest pending review submission to update
+    const reviewSubmission = await this.reviewSubmissionRepository.findOne({
+      where: { user_id: userId, status: OnboardingReviewStatus.PENDING },
+      order: { attempt_number: 'DESC' },
+    });
+
     // Handle APPROVAL
     if (dto.status === ActivationStatus.APPROVED) {
       // Calculate time to activation (seconds from approved_at to activation)
@@ -737,6 +818,16 @@ export class OnboardingService {
         approvedAt: activatedAt,
         notes: dto.notes,
       });
+
+      // Update review submission with approval details
+      if (reviewSubmission) {
+        await this.reviewSubmissionRepository.update(reviewSubmission.id, {
+          status: OnboardingReviewStatus.APPROVED,
+          reviewed_by: adminId,
+          reviewed_at: activatedAt,
+          admin_notes: dto.notes,
+        });
+      }
 
       console.log(
         `[OnboardingService] User ${userId} APPROVED by admin ${adminId}. Onboarding complete.`,
@@ -786,8 +877,18 @@ export class OnboardingService {
         notes: dto.notes,
       });
 
+      // Update review submission with rejection details
+      if (reviewSubmission) {
+        await this.reviewSubmissionRepository.update(reviewSubmission.id, {
+          status: OnboardingReviewStatus.REJECTED,
+          reviewed_by: adminId,
+          reviewed_at: new Date(),
+          admin_notes: dto.notes,
+        });
+      }
+
       console.log(
-        `[OnboardingService] User ${userId} REJECTED by admin ${adminId}. Sent back to in_progress.`,
+        `[OnboardingService] User ${userId} REJECTED by admin ${adminId}. Sent back to in_progress. Rejection count: ${reviewSubmission?.attempt_number || 'unknown'}`,
       );
 
       // Track admin rejection event
@@ -802,6 +903,7 @@ export class OnboardingService {
           targetUserId: userId,
           targetUserEmail: user.email,
           notes: dto.notes,
+          attemptNumber: reviewSubmission?.attempt_number,
         },
       });
 
@@ -876,6 +978,24 @@ export class OnboardingService {
     return updatedUser!;
   }
 
+  // ==================== ONBOARDING REVIEW SUBMISSIONS ====================
+
+  /**
+   * Get all onboarding review submission attempts for a user
+   * Returns complete audit history of submissions, rejections, and approvals
+   */
+  async getOnboardingReviewSubmissions(
+    userId: string,
+  ): Promise<OnboardingReviewSubmission[]> {
+    const submissions = await this.reviewSubmissionRepository.find({
+      where: { user_id: userId },
+      relations: ['user', 'reviewer'],
+      order: { attempt_number: 'DESC' },
+    });
+
+    return submissions;
+  }
+
   // ==================== HELPER METHODS ====================
 
   private async updateUserOnboardingStatus(
@@ -896,5 +1016,55 @@ export class OnboardingService {
     console.log(
       `[OnboardingService] Updated user ${userId} onboarding status to ${status}${status === OnboardingStatus.LICENSED ? ' and isLicensed to true' : ''}`,
     );
+  }
+
+  /**
+   * Create a frozen JSONB snapshot of user's onboarding state for admin review
+   * This preserves what the admin saw at review time for historical audit
+   */
+  private async createOnboardingSnapshot(
+    userId: string,
+    isFastTrack: boolean = false,
+  ): Promise<Record<string, any>> {
+    const snapshot: Record<string, any> = {
+      userId,
+      isFastTrack,
+      snapshotCreatedAt: new Date().toISOString(),
+    };
+
+    // Standard path: licensing_training, licensing_exam, e_and_o_insurance
+    if (!isFastTrack) {
+      const training = await this.licensingTrainingRepository.findOne({
+        where: { userId },
+      });
+      const exam = await this.licensingExamRepository.findOne({
+        where: { userId },
+      });
+      const eAndO = await this.eAndOInsuranceRepository.findOne({
+        where: { userId },
+      });
+
+      if (training) snapshot.licensing_training = training;
+      if (exam) snapshot.licensing_exam = exam;
+      if (eAndO) snapshot.e_and_o_insurance = eAndO;
+    }
+    // Fast-track path: licensed_agent_intake, licenses, e_and_o_insurance
+    else {
+      const intake = await this.licensedAgentIntakeRepository.findOne({
+        where: { userId },
+      });
+      const licenses = await this.licenseRepository.find({
+        where: { userId },
+      });
+      const eAndO = await this.eAndOInsuranceRepository.findOne({
+        where: { userId },
+      });
+
+      if (intake) snapshot.licensed_agent_intake = intake;
+      if (licenses.length) snapshot.licenses = licenses;
+      if (eAndO) snapshot.e_and_o_insurance = eAndO;
+    }
+
+    return snapshot;
   }
 }

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { UserEvent, EventType } from './entities/user-event.entity';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
+import { GetEventsQueryDto } from './dto/get-events-query.dto';
 
 export interface TrackEventDto {
   userId?: string;
@@ -104,5 +105,68 @@ export class AnalyticsService {
       order: { created_at: 'DESC' },
       take: limit,
     });
+  }
+
+  /**
+   * Find events with optional filters (admin only)
+   * GET /analytics/events?role=agent&eventType=login&limit=50&offset=0
+   */
+  async findEvents(query: GetEventsQueryDto): Promise<{
+    events: UserEvent[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const { role, eventType, limit = 100, offset = 0 } = query;
+
+    // Build query with QueryBuilder for more control
+    let queryBuilder = this.eventRepository
+      .createQueryBuilder('event')
+      .leftJoinAndSelect('event.user', 'user')
+      .select([
+        'event.id',
+        'event.user_id',
+        'event.event_type',
+        'event.role',
+        'event.affiliate_id',
+        'event.cadence_day',
+        'event.cycle_id',
+        'event.metadata',
+        'event.created_at',
+        // Select only specific user fields
+        'user.id',
+        'user.email',
+        'user.firstName',
+        'user.lastName',
+        'user.role',
+        'user.status',
+      ])
+      .orderBy('event.created_at', 'DESC')
+      .skip(offset)
+      .take(limit);
+
+    // Apply filters
+    if (role) {
+      queryBuilder = queryBuilder.andWhere('event.role = :role', { role });
+    }
+
+    if (eventType) {
+      queryBuilder = queryBuilder.andWhere('event.event_type = :eventType', {
+        eventType,
+      });
+    }
+
+    // Get total count
+    const total = await queryBuilder.getCount();
+
+    // Get events
+    const events = await queryBuilder.getMany();
+
+    return {
+      events,
+      total,
+      limit,
+      offset,
+    };
   }
 }

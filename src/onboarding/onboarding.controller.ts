@@ -106,6 +106,11 @@ export class OnboardingController {
     return await this.onboardingService.updateLicensingExam(user.id, dto);
   }
 
+  @Get('licensing-exam/attempts')
+  async getLicensingExamAttempts(@CurrentUser() user: User) {
+    return await this.onboardingService.getLicensingExamAttempts(user.id);
+  }
+
   // ==================== E&O INSURANCE ====================
 
   @Post('e-and-o-insurance')
@@ -188,5 +193,10 @@ export class OnboardingController {
     @Body() dto: ActivateUserDto,
   ) {
     return await this.onboardingService.activateUser(userId, admin.id, dto);
+  }
+
+  @Get('review-submissions')
+  async getOnboardingReviewSubmissions(@CurrentUser() user: User) {
+    return await this.onboardingService.getOnboardingReviewSubmissions(user.id);
   }
 }

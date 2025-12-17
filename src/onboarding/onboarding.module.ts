@@ -4,7 +4,9 @@ import { OnboardingController } from './onboarding.controller';
 import { OnboardingService } from './onboarding.service';
 import { LicensingTraining } from './entities/licensing-training.entity';
 import { LicensingExam } from './entities/licensing-exam.entity';
+import { LicensingExamAttempt } from './entities/licensing-exam-attempt.entity';
 import { EAndOInsurance } from './entities/e-and-o-insurance.entity';
+import { OnboardingReviewSubmission } from './entities/onboarding-review-submission.entity';
 import { ActivationRequest } from './entities/activation-request.entity';
 import { LicensedAgentIntake } from './entities/licensed-agent-intake.entity';
 import { License } from './entities/license.entity';
@@ -21,7 +23,9 @@ import { AnalyticsModule } from '../analytics/analytics.module';
     TypeOrmModule.forFeature([
       LicensingTraining,
       LicensingExam,
+      LicensingExamAttempt,
       EAndOInsurance,
+      OnboardingReviewSubmission,
       ActivationRequest,
       LicensedAgentIntake,
       License,

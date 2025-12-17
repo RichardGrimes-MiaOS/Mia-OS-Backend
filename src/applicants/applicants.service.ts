@@ -253,6 +253,20 @@ export class ApplicantsService {
         }
       }
 
+      // If status changed to REJECTED, send rejection email
+      if (
+        oldStatus !== ApplicantStatus.REJECTED &&
+        updateStatusDto.status === ApplicantStatus.REJECTED
+      ) {
+        // Send rejection email with notes
+        await this.emailService.sendApplicationRejectedEmail({
+          email: savedApplicant.email,
+          firstName: savedApplicant.firstName,
+          lastName: savedApplicant.lastName,
+          notes: updateStatusDto.notes,
+        });
+      }
+
       // Reload applicant with relations to return complete data
       return await this.findOne(id);
     } catch (error) {

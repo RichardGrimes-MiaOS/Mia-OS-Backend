@@ -42,6 +42,13 @@ export interface SendActivationRejectedEmailDto {
   notes?: string;
 }
 
+export interface SendApplicationRejectedEmailDto {
+  email: string;
+  firstName: string;
+  lastName: string;
+  notes?: string;
+}
+
 @Injectable()
 export class EmailService {
   private sesClient: SESClient;
@@ -534,6 +541,83 @@ Don't be discouraged! This is a normal part of the process. Review the feedback,
 Go to Dashboard: ${dashboardUrl}
 
 If you have any questions about the feedback, please contact your team lead or support.
+
+© ${new Date().getFullYear()} Make Income Anywhere. All rights reserved.
+    `.trim();
+  }
+
+  /**
+   * Send application rejected email to applicant
+   */
+  async sendApplicationRejectedEmail(
+    data: SendApplicationRejectedEmailDto,
+  ): Promise<void> {
+    try {
+      const htmlTemplate = this.loadEmailTemplate('application-rejected.html');
+
+      const htmlBody = this.replaceTemplateVariables(htmlTemplate, {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        notes:
+          data.notes ||
+          'Unfortunately, we are unable to move forward with your application at this time.',
+        currentYear: new Date().getFullYear().toString(),
+      });
+
+      const textBody = this.generateApplicationRejectedTextVersion(data);
+
+      const command = new SendEmailCommand({
+        Source: this.fromEmail,
+        Destination: {
+          ToAddresses: [data.email],
+        },
+        Message: {
+          Subject: {
+            Data: 'Application Status Update - MIA',
+            Charset: 'UTF-8',
+          },
+          Body: {
+            Html: {
+              Data: htmlBody,
+              Charset: 'UTF-8',
+            },
+            Text: {
+              Data: textBody,
+              Charset: 'UTF-8',
+            },
+          },
+        },
+      });
+
+      await this.sesClient.send(command);
+      console.log(`Application rejected email sent to ${data.email}`);
+    } catch (error) {
+      console.error('Failed to send application rejected email via SES:', error);
+      // Don't throw error - log for monitoring
+    }
+  }
+
+  /**
+   * Generate plain text version of the application rejected email
+   */
+  private generateApplicationRejectedTextVersion(
+    data: SendApplicationRejectedEmailDto,
+  ): string {
+    return `
+APPLICATION STATUS UPDATE
+
+Hi ${data.firstName},
+
+Thank you for your interest in joining MIA. After careful review of your application, we regret to inform you that we are unable to move forward at this time.
+
+FEEDBACK:
+${data.notes || 'Unfortunately, we are unable to move forward with your application at this time.'}
+
+We appreciate the time and effort you put into your application. If you have any questions or would like more information, please don't hesitate to reach out to us.
+
+We wish you the best in your future endeavors.
+
+If you have any questions, please contact our support team at support@makeincomeanywhere.com
 
 © ${new Date().getFullYear()} Make Income Anywhere. All rights reserved.
     `.trim();

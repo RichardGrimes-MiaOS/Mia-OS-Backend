@@ -11,7 +11,9 @@ import { Applicant } from './applicants/entities/applicant.entity';
 import { User } from './users/entities/user.entity';
 import { LicensingTraining } from './onboarding/entities/licensing-training.entity';
 import { LicensingExam } from './onboarding/entities/licensing-exam.entity';
+import { LicensingExamAttempt } from './onboarding/entities/licensing-exam-attempt.entity';
 import { EAndOInsurance } from './onboarding/entities/e-and-o-insurance.entity';
+import { OnboardingReviewSubmission } from './onboarding/entities/onboarding-review-submission.entity';
 import { ActivationRequest } from './onboarding/entities/activation-request.entity';
 import { LicensedAgentIntake } from './onboarding/entities/licensed-agent-intake.entity';
 import { License } from './onboarding/entities/license.entity';
@@ -33,6 +35,8 @@ import { TasksModule } from './tasks/tasks.module';
 import { AffiliatesModule } from './affiliates/affiliates.module';
 import { ActivationModule } from './activation/activation.module';
 import { AdminMetricsModule } from './admin-metrics/admin-metrics.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -52,7 +56,9 @@ import { AdminMetricsModule } from './admin-metrics/admin-metrics.module';
         User,
         LicensingTraining,
         LicensingExam,
+        LicensingExamAttempt,
         EAndOInsurance,
+        OnboardingReviewSubmission,
         ActivationRequest,
         LicensedAgentIntake,
         License,
@@ -79,6 +85,8 @@ import { AdminMetricsModule } from './admin-metrics/admin-metrics.module';
     AffiliatesModule,
     ActivationModule,
     AdminMetricsModule,
+    AnalyticsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [
