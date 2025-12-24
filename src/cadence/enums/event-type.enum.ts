@@ -1,0 +1,6 @@
+export enum CadenceEventType {
+  ACTION_COMPLETED = 'ACTION_COMPLETED',
+  MISSED = 'MISSED',
+  RESET = 'RESET',
+  MILESTONE = 'MILESTONE',
+}

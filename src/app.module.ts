@@ -37,6 +37,9 @@ import { ActivationModule } from './activation/activation.module';
 import { AdminMetricsModule } from './admin-metrics/admin-metrics.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { UsersModule } from './users/users.module';
+import { CadenceModule } from './cadence/cadence.module';
+import { CadenceLog } from './cadence/entities/cadence-log.entity';
+import { RhythmStateSnapshot } from './cadence/entities/rhythm-state-snapshot.entity';
 
 @Module({
   imports: [
@@ -70,6 +73,8 @@ import { UsersModule } from './users/users.module';
         AffiliateVisitor,
         UserOnboardingStep,
         UserEvent,
+        CadenceLog,
+        RhythmStateSnapshot,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
@@ -87,6 +92,7 @@ import { UsersModule } from './users/users.module';
     AdminMetricsModule,
     AnalyticsModule,
     UsersModule,
+    CadenceModule,
   ],
   controllers: [AppController],
   providers: [

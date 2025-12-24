@@ -4,14 +4,13 @@ import { Repository, LessThan } from 'typeorm';
 import { UserEvent, EventType } from './entities/user-event.entity';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { GetEventsQueryDto } from './dto/get-events-query.dto';
+import { SSMService } from '../cadence/services/ssm.service';
 
 export interface TrackEventDto {
   userId?: string;
   eventType: EventType;
   role?: UserRole;
   affiliateId?: string;
-  cadenceDay?: number;
-  cycleId?: string;
   metadata?: Record<string, any>;
 }
 
@@ -22,6 +21,7 @@ export class AnalyticsService {
     private eventRepository: Repository<UserEvent>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private readonly ssmService: SSMService,
   ) {}
 
   /**
@@ -29,14 +29,20 @@ export class AnalyticsService {
    * This is the ONLY method you should call to log events
    */
   async trackEvent(data: TrackEventDto): Promise<void> {
+    // Fetch cadence_day and cycle_id from SSM
+    const [cadenceDay, cycleId] = await Promise.all([
+      this.ssmService.getCadenceDay(),
+      this.ssmService.getCycleId(),
+    ]);
+
     // Create event record
     const event = this.eventRepository.create({
       user_id: data.userId,
       event_type: data.eventType,
       role: data.role,
       affiliate_id: data.affiliateId,
-      cadence_day: data.cadenceDay,
-      cycle_id: data.cycleId,
+      cadence_day: cadenceDay,
+      cycle_id: cycleId,
       metadata: data.metadata,
     });
 
