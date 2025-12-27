@@ -96,6 +96,36 @@ src/
 - **Imports**: Use absolute paths via tsconfig-paths
 - **Module Resolution**: nodenext (ES modules)
 - **Decorators**: experimentalDecorators enabled for NestJS/TypeORM
+- **Comments**: Write comprehensive JSDoc-style comments for all major functions and classes
+- **Code Documentation Pattern**: Follow this structure:
+  ```typescript
+  /**
+   * Brief description of what this function/class does
+   *
+   * Detailed explanation (if needed):
+   * - Key points about behavior
+   * - Important constraints or assumptions
+   * - Phase boundaries (if applicable: "Phase 1: X, Phase 2: Y")
+   *
+   * @param paramName - Description of parameter
+   * @returns Description of return value
+   *
+   * @example
+   * const result = myFunction(param);
+   */
+  ```
+- **Inline Comments**: Use inline comments to explain:
+  - Complex business logic decisions
+  - "Why" over "what" (code shows what, comments explain why)
+  - State transitions or thresholds
+  - Special cases or edge cases
+  - Prerequisite ordering or dependencies
+- **Block Comments**: Use block comments for:
+  - Rule explanations (e.g., "Rule 1: If onboardingStatus = 'onboarded' → required_actions = []")
+  - Algorithm descriptions (e.g., "Density-based pattern analysis")
+  - Phase boundaries (e.g., "Phase 1: Static lookup, Phase 2: AI-driven")
+- **Enum Documentation**: Add JSDoc comments to enum values explaining their meaning
+- **Constant Documentation**: Document magic numbers and thresholds with inline comments
 
 ### Security
 
