@@ -40,6 +40,8 @@ import { UsersModule } from './users/users.module';
 import { CadenceModule } from './cadence/cadence.module';
 import { CadenceLog } from './cadence/entities/cadence-log.entity';
 import { RhythmStateSnapshot } from './cadence/entities/rhythm-state-snapshot.entity';
+import { DailyPlanModule } from './daily-plan/daily-plan.module';
+import { UserDailyPlan } from './daily-plan/entities/user-daily-plan.entity';
 
 @Module({
   imports: [
@@ -75,6 +77,7 @@ import { RhythmStateSnapshot } from './cadence/entities/rhythm-state-snapshot.en
         UserEvent,
         CadenceLog,
         RhythmStateSnapshot,
+        UserDailyPlan,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
@@ -93,6 +96,7 @@ import { RhythmStateSnapshot } from './cadence/entities/rhythm-state-snapshot.en
     AnalyticsModule,
     UsersModule,
     CadenceModule,
+    DailyPlanModule,
   ],
   controllers: [AppController],
   providers: [

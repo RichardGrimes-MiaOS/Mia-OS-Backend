@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual } from 'typeorm';
 import { CadenceLog } from '../entities/cadence-log.entity';
@@ -14,7 +18,11 @@ export interface RhythmStateResponse {
   days_remaining_to_next_threshold: number;
   today_status: 'INCOMPLETE' | 'COMPLETE';
   internal_degradation: boolean;
+  behavioral_constraints: { suppress_escalation: boolean } | null;
   computed_at: string;
+  peer_alignment_eligible: boolean;
+  peer_alignment_signals: string[];
+  peer_context_count: number;
 }
 
 @Injectable()
@@ -76,7 +84,11 @@ export class RhythmResolverService {
           days_remaining_to_next_threshold: 1,
           today_status: 'INCOMPLETE',
           internal_degradation: false,
+          behavioral_constraints: null,
           computed_at: computedAt,
+          peer_alignment_eligible: true,
+          peer_alignment_signals: ['FLOW_STATE', 'LIFECYCLE'],
+          peer_context_count: 0,
         };
       }
     }
@@ -86,7 +98,10 @@ export class RhythmResolverService {
     const todayStatus = this.determineTodayStatus(todayLog);
 
     // 5. Count consecutive compliant days (ignoring RESET)
-    const consecutiveDays = this.countConsecutiveCompliantDays(recentLogs, today);
+    const consecutiveDays = this.countConsecutiveCompliantDays(
+      recentLogs,
+      today,
+    );
 
     // 6. Calculate weeks on cadence
     const weeksOnCadence = Math.floor(consecutiveDays / 7);
@@ -95,15 +110,17 @@ export class RhythmResolverService {
     const rhythmState = this.determineRhythmState(consecutiveDays, recentLogs);
 
     // 8. Calculate next threshold and days remaining
-    const { nextThreshold, daysRemaining } = this.calculateNextThreshold(
-      rhythmState,
-    );
+    const { nextThreshold, daysRemaining } =
+      this.calculateNextThreshold(rhythmState);
 
     // 9. Detect internal degradation signal (early warning before state downgrade)
-    const internalDegradation = this.detectDegradation(
-      rhythmState,
-      recentLogs,
-    );
+    const internalDegradation = this.detectDegradation(rhythmState, recentLogs);
+
+    // 10. Set behavioral constraints (only for FLOWING_IN_RHYTHM)
+    const behavioralConstraints =
+      rhythmState === RhythmState.FLOWING_IN_RHYTHM
+        ? { suppress_escalation: true }
+        : null;
 
     return {
       rhythm_state: rhythmState,
@@ -113,7 +130,11 @@ export class RhythmResolverService {
       days_remaining_to_next_threshold: daysRemaining,
       today_status: todayStatus,
       internal_degradation: internalDegradation,
+      behavioral_constraints: behavioralConstraints,
       computed_at: computedAt,
+      peer_alignment_eligible: true,
+      peer_alignment_signals: ['FLOW_STATE', 'LIFECYCLE'],
+      peer_context_count: 0,
     };
   }
 
@@ -149,7 +170,7 @@ export class RhythmResolverService {
     today: string,
   ): number {
     // Create Map for O(1) date lookups (optimization from O(n²) to O(n))
-    const logByDate = new Map(logs.map(l => [l.logDate, l]));
+    const logByDate = new Map(logs.map((l) => [l.logDate, l]));
     let consecutive = 0;
 
     // Iterate backwards from today
@@ -188,9 +209,12 @@ export class RhythmResolverService {
    * Uses compliance density in rolling windows rather than strict consecutive counting
    * This allows single MISSED days to be absorbed in established rhythms
    *
-   * STARTING_TO_FLOW: 1 MISSED in 3 days → OFF_RHYTHM (early momentum is fragile)
-   * ON_CADENCE: Require 2 MISSED within last 4 days (single MISSED is warning, not collapse)
-   * FLOWING_IN_RHYTHM: Require 2 consecutive MISSED or 3 MISSED within 7 days (graceful decay)
+   * Degradation rules (cascading, never skip states):
+   * - FLOWING_IN_RHYTHM: 2 consecutive MISSED OR 3 MISSED in 7 days → ON_CADENCE
+   * - ON_CADENCE: 2 MISSED in 4 days → STARTING_TO_FLOW (always, never skip to OFF_RHYTHM)
+   * - STARTING_TO_FLOW: Context-aware degradation
+   *   - New users (compliant21 < 2): 1 MISSED in 3 days → OFF_RHYTHM (fragile)
+   *   - Recovery users (compliant21 >= 2): 2 MISSED in 3 days → OFF_RHYTHM (more forgiving)
    */
   private determineRhythmState(
     consecutiveDays: number,
@@ -237,9 +261,9 @@ export class RhythmResolverService {
     else if (compliant7 >= 6 && compliant4 >= 3) {
       potentialState = RhythmState.ON_CADENCE;
     }
-    // STARTING_TO_FLOW: 2-3 compliant in last 4 days
-    // (early momentum building)
-    else if (compliant4 >= 2 && compliant4 <= 3) {
+    // STARTING_TO_FLOW: 1-3 compliant in last 4 days
+    // (first compliant actions detected, early momentum forming)
+    else if (compliant4 >= 1 && compliant4 <= 3) {
       potentialState = RhythmState.STARTING_TO_FLOW;
     }
     // Has some history but doesn't meet thresholds
@@ -275,7 +299,8 @@ export class RhythmResolverService {
    * Count MISSED days in a set of logs
    */
   private countMissedInLogs(logs: CadenceLog[]): number {
-    return logs.filter((log) => log.eventType === CadenceEventType.MISSED).length;
+    return logs.filter((log) => log.eventType === CadenceEventType.MISSED)
+      .length;
   }
 
   /**
@@ -286,7 +311,7 @@ export class RhythmResolverService {
     today: string,
   ): number {
     // Create Map for O(1) date lookups (optimization from O(n²) to O(n))
-    const logByDate = new Map(logs.map(l => [l.logDate, l]));
+    const logByDate = new Map(logs.map((l) => [l.logDate, l]));
     let consecutive = 0;
 
     // Iterate from today backwards
@@ -331,18 +356,29 @@ export class RhythmResolverService {
 
       case RhythmState.ON_CADENCE:
         // Require 2 MISSED in 4 days to degrade
+        // Always degrade to STARTING_TO_FLOW (never skip to OFF_RHYTHM)
         if (missed4 >= 2) {
-          // Graceful downgrade path based on history
-          return compliant21 >= 4
-            ? RhythmState.STARTING_TO_FLOW
-            : RhythmState.OFF_RHYTHM;
+          return RhythmState.STARTING_TO_FLOW;
         }
         return RhythmState.ON_CADENCE;
 
       case RhythmState.STARTING_TO_FLOW:
-        // 1 MISSED in last 3 days → OFF_RHYTHM (fragile)
-        if (missed3 >= 1) {
-          return RhythmState.OFF_RHYTHM;
+        // Distinguish between new users and recovery users
+        // Recovery detection: compliant21 >= 2 indicates historical momentum
+        const isRecovery = compliant21 >= 2;
+
+        if (isRecovery) {
+          // Recovery users (coming from ON_CADENCE): More forgiving
+          // 2 MISSED in 3 days → OFF_RHYTHM (allows 1 warning MISSED)
+          if (missed3 >= 2) {
+            return RhythmState.OFF_RHYTHM;
+          }
+        } else {
+          // New users: Fragile momentum
+          // 1 MISSED in 3 days → OFF_RHYTHM (early momentum is brittle)
+          if (missed3 >= 1) {
+            return RhythmState.OFF_RHYTHM;
+          }
         }
         return RhythmState.STARTING_TO_FLOW;
 
@@ -383,7 +419,7 @@ export class RhythmResolverService {
     const today = new Date().toISOString().split('T')[0];
 
     // Get today's log to check for explicit MISSED
-    const todayLog = recentLogs.find(log => log.logDate === today);
+    const todayLog = recentLogs.find((log) => log.logDate === today);
     const hasMissedToday = todayLog?.eventType === CadenceEventType.MISSED;
 
     // Calculate windows (reuse existing helper methods)
@@ -392,7 +428,10 @@ export class RhythmResolverService {
 
     const missed7 = this.countMissedInLogs(last7Days);
     const missed4 = this.countMissedInLogs(last4Days);
-    const consecutiveMissed = this.countConsecutiveMissedFromToday(recentLogs, today);
+    const consecutiveMissed = this.countConsecutiveMissedFromToday(
+      recentLogs,
+      today,
+    );
 
     switch (rhythmState) {
       case RhythmState.STARTING_TO_FLOW:
@@ -424,28 +463,30 @@ export class RhythmResolverService {
     days: number,
   ): CadenceLog[] {
     const windowStart = this.subtractDays(today, days - 1);
-    return logs.filter((log) => log.logDate >= windowStart && log.logDate <= today);
+    return logs.filter(
+      (log) => log.logDate >= windowStart && log.logDate <= today,
+    );
   }
-
 
   /**
    * Calculate next threshold and days remaining
    * Uses density-based estimates aligned with pattern analysis
    */
-  private calculateNextThreshold(
-    rhythmState: RhythmState,
-  ): { nextThreshold: string | null; daysRemaining: number } {
+  private calculateNextThreshold(rhythmState: RhythmState): {
+    nextThreshold: string | null;
+    daysRemaining: number;
+  } {
     switch (rhythmState) {
       case RhythmState.NOT_STARTED:
         return {
           nextThreshold: RhythmState.STARTING_TO_FLOW,
-          daysRemaining: 2, // Need 2 compliant in 4 days
+          daysRemaining: 1, // First compliant action triggers STARTING_TO_FLOW
         };
 
       case RhythmState.OFF_RHYTHM:
         return {
           nextThreshold: RhythmState.STARTING_TO_FLOW,
-          daysRemaining: 2, // Need 2 compliant in 4 days
+          daysRemaining: 1, // First compliant action triggers STARTING_TO_FLOW
         };
 
       case RhythmState.STARTING_TO_FLOW:
