@@ -199,4 +199,14 @@ export class OnboardingController {
   async getOnboardingReviewSubmissions(@CurrentUser() user: User) {
     return await this.onboardingService.getOnboardingReviewSubmissions(user.id);
   }
+
+  // ==================== GET ONBOARDING STATUS (MCP TOOL) ====================
+
+  @Get('status')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.AGENT)
+  @HttpCode(HttpStatus.OK)
+  async getOnboardingStatus(@CurrentUser() user: User) {
+    return await this.onboardingService.getOnboardingStatus(user.id);
+  }
 }

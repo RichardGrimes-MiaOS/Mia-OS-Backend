@@ -79,6 +79,10 @@ export class ContactsService {
 
     queryBuilder.orderBy('contact.createdAt', 'DESC');
 
+    // Apply pagination
+    const { limit = 5, offset = 0 } = filters;
+    queryBuilder.skip(offset).take(limit);
+
     return queryBuilder.getMany();
   }
 

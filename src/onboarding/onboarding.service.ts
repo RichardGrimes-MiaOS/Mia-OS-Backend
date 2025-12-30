@@ -1067,4 +1067,146 @@ export class OnboardingService {
 
     return snapshot;
   }
+
+  // ==================== GET ONBOARDING STATUS (MCP TOOL) ====================
+
+  /**
+   * Get comprehensive onboarding status for MCP server tools
+   *
+   * Returns rich contextual information about user's onboarding progress,
+   * including completed steps, pending steps, and detailed state.
+   *
+   * @param userId - User ID to get status for
+   * @returns Comprehensive onboarding status
+   */
+  async getOnboardingStatus(userId: string): Promise<any> {
+    // Get user
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const completedSteps: string[] = [];
+    const pendingSteps: string[] = [];
+    const details: any = {};
+
+    // Check which path the user is on: standard (training/exam) or fast-track (licenses)
+    const licenses = await this.licenseRepository.find({ where: { userId } });
+    const isFastTrack = licenses.length > 0;
+
+    if (isFastTrack) {
+      // Fast-track path: Show licenses and licensed intake only
+      details.licenses = {
+        count: licenses.length,
+        states: licenses.map((l) => l.state),
+      };
+      completedSteps.push('licenses');
+
+      // Check licensed intake
+      const intake = await this.licensedAgentIntakeRepository.findOne({
+        where: { userId },
+      });
+      if (intake) {
+        completedSteps.push('licensed_intake');
+        details.licensedIntake = {
+          completed: true,
+          submittedAt: intake.createdAt,
+        };
+      }
+
+      // Check E&O insurance (common to both paths)
+      const eoInsurances = await this.eAndOInsuranceRepository.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      });
+      if (eoInsurances.length > 0) {
+        completedSteps.push('e_and_o_insurance');
+        const latest = eoInsurances[0];
+        details.eoInsurance = {
+          completed: true,
+          count: eoInsurances.length,
+          latestUploadedAt: latest.createdAt,
+          latestExpiresAt: latest.expirationDate,
+        };
+      }
+    } else {
+      // Standard path: Show licensing training and exam only
+      // Check licensing training
+      const training = await this.licensingTrainingRepository.findOne({
+        where: { userId },
+      });
+      if (training && training.isRegistered) {
+        completedSteps.push('licensing_training');
+        details.licensingTraining = {
+          completed: true,
+          isRegistered: training.isRegistered,
+          completedAt: training.updatedAt,
+        };
+      } else if (training) {
+        pendingSteps.push('licensing_training');
+        details.licensingTraining = {
+          completed: false,
+          isRegistered: training.isRegistered,
+        };
+      }
+
+      // Check licensing exam
+      const exam = await this.licensingExamRepository.findOne({
+        where: { userId },
+      });
+      const examAttempts = await this.licensingExamAttemptRepository.find({
+        where: { user_id: userId },
+        order: { attempt_number: 'DESC' },
+      });
+
+      if (exam && exam.result === ExamResult.PASSED) {
+        completedSteps.push('licensing_exam');
+        details.licensingExam = {
+          completed: true,
+          passed: true,
+          attempts: examAttempts.length,
+          passedAt: exam.updatedAt,
+        };
+      } else if (exam) {
+        pendingSteps.push('licensing_exam');
+        details.licensingExam = {
+          completed: false,
+          passed: false,
+          attempts: examAttempts.length,
+        };
+      }
+
+      // Check E&O insurance (common to both paths)
+      const eoInsurances = await this.eAndOInsuranceRepository.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      });
+      if (eoInsurances.length > 0) {
+        completedSteps.push('e_and_o_insurance');
+        const latest = eoInsurances[0];
+        details.eoInsurance = {
+          completed: true,
+          count: eoInsurances.length,
+          latestUploadedAt: latest.createdAt,
+          latestExpiresAt: latest.expirationDate,
+        };
+      } else {
+        pendingSteps.push('e_and_o_insurance');
+        details.eoInsurance = {
+          completed: false,
+          count: 0,
+        };
+      }
+    }
+
+    // Note: affiliate and activation details are not included in this response
+
+    return {
+      onboardingStatus: user.onboardingStatus,
+      userRole: user.role,
+      completedSteps,
+      pendingSteps,
+      details,
+    };
+  }
 }

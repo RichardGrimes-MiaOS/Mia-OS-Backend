@@ -24,7 +24,7 @@ export class DailyPlanController {
    * }
    */
   @Get()
-  async getDailyPlan(@Request() req) {
+  async getDailyPlan(@Request() req: any) {
     const userId = req.user.userId;
     return this.dailyPlanResolverService.resolveDailyPlan(userId);
   }

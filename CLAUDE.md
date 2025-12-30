@@ -88,6 +88,15 @@ src/
 - **Guards**: Use `JwtAuthGuard` + `RolesGuard` for protected endpoints
 - **Decorators**: `@CurrentUser()` for extracting authenticated user from request
 - **DTOs**: class-validator decorators for request validation
+- **API Documentation**: Use `@ApiProperty()` decorator from `@nestjs/swagger` on all DTO properties for automatic OpenAPI/Swagger documentation generation
+  ```typescript
+  // Example: Documenting a DTO property
+  @ApiProperty({
+    enum: ActionCategory,
+    description: 'Action category for precedence ordering'
+  })
+  category: ActionCategory;
+  ```
 
 ### Code Style
 

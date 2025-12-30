@@ -103,6 +103,10 @@ export class TasksService {
 
     queryBuilder.orderBy('task.dueDate', 'ASC');
 
+    // Apply pagination
+    const { limit = 5, offset = 0 } = filters;
+    queryBuilder.skip(offset).take(limit);
+
     const tasks = await queryBuilder.getMany();
 
     // Add isOverdue flag to each task

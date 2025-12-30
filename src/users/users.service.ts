@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole, UserStatus } from './entities/user.entity';
@@ -13,7 +13,10 @@ export class UsersService {
   /**
    * Get all users with pagination
    */
-  async findAll(limit = 100, offset = 0): Promise<{
+  async findAll(
+    limit = 100,
+    offset = 0,
+  ): Promise<{
     users: User[];
     total: number;
     limit: number;
@@ -57,6 +60,63 @@ export class UsersService {
     }
 
     const eligibleRoles = [UserRole.AGENT, UserRole.AFFILIATE_ONLY];
-    return eligibleRoles.includes(user.role) && user.status === UserStatus.ACTIVE;
+    return (
+      eligibleRoles.includes(user.role) && user.status === UserStatus.ACTIVE
+    );
+  }
+
+  /**
+   * Get agent profile for MCP tools (Phase 1)
+   *
+   * Returns essential agent information including:
+   * - Basic user info (name, email, phone)
+   * - Role and status
+   * - Onboarding status
+   * - Key timestamps (joined, last login, last active, approved, activated)
+   * - Licensing status
+   * - Creator information
+   *
+   * @param userId - User ID to get profile for
+   * @returns Agent profile information
+   */
+  async getAgentProfile(userId: string): Promise<any> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['createdBy'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      // Basic info
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+
+      // Role and status
+      role: user.role,
+      status: user.status,
+      onboardingStatus: user.onboardingStatus,
+
+      // Licensing
+      isLicensed: user.isLicensed,
+
+      // Timestamps
+      createdAt: user.createdAt,
+      lastLogin: user.lastLogin,
+      lastActiveAt: user.last_active_at,
+      approvedAt: user.approved_at,
+
+      // Creator info
+      createdBy: user.createdBy
+        ? {
+            name: `${user.createdBy.firstName} ${user.createdBy.lastName}`,
+            email: user.createdBy.email,
+          }
+        : null,
+    };
   }
 }
