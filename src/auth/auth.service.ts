@@ -5,23 +5,8 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  CognitoIdentityProviderClient,
-  SignUpCommand,
-  InitiateAuthCommand,
-  ChangePasswordCommand,
-  AdminSetUserPasswordCommand,
-  AdminUpdateUserAttributesCommand,
-  AdminGetUserCommand,
-  GetUserCommand,
-  ConfirmSignUpCommand,
-  ResendConfirmationCodeCommand,
-  AdminCreateUserCommand,
-  RespondToAuthChallengeCommand,
-} from '@aws-sdk/client-cognito-identity-provider';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -31,27 +16,16 @@ import { ConfirmEmailDto } from './dto/confirm-email.dto';
 import { ResendConfirmationDto } from './dto/resend-confirmation.dto';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { EventType } from '../analytics/entities/user-event.entity';
+import { CognitoService } from '../cognito/cognito.service';
 
 @Injectable()
 export class AuthService {
-  private cognitoClient: CognitoIdentityProviderClient;
-  private clientId: string;
-  private userPoolId: string;
-
   constructor(
-    private configService: ConfigService,
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private analyticsService: AnalyticsService,
-  ) {
-    this.cognitoClient = new CognitoIdentityProviderClient({
-      region: this.configService.get<string>('AWS_REGION'),
-    });
-    this.clientId = this.configService.get<string>('AWS_COGNITO_CLIENT_ID')!;
-    this.userPoolId = this.configService.get<string>(
-      'AWS_COGNITO_USER_POOL_ID',
-    )!;
-  }
+    private cognitoService: CognitoService,
+  ) {}
 
   async signup(
     signupDto: SignupDto,
@@ -68,21 +42,21 @@ export class AuthService {
         throw new ConflictException('User with this email already exists');
       }
 
-      // Sign up user in Cognito
-      const signUpCommand = new SignUpCommand({
-        ClientId: this.clientId,
-        Username: email,
-        Password: password,
-        UserAttributes: [
-          { Name: 'email', Value: email },
-          { Name: 'given_name', Value: firstName },
-          { Name: 'family_name', Value: lastName },
-          ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
-          ...(role ? [{ Name: 'custom:role', Value: role }] : []),
-        ],
-      });
+      // Build user attributes for Cognito
+      const attributes = [
+        { Name: 'email', Value: email },
+        { Name: 'given_name', Value: firstName },
+        { Name: 'family_name', Value: lastName },
+        ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
+        ...(role ? [{ Name: 'custom:role', Value: role }] : []),
+      ];
 
-      const signUpResponse = await this.cognitoClient.send(signUpCommand);
+      // Sign up user in Cognito
+      const signUpResponse = await this.cognitoService.signUp(
+        email,
+        password,
+        attributes,
+      );
 
       if (!signUpResponse.UserSub) {
         throw new InternalServerErrorException(
@@ -162,20 +136,14 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('No user found');
     }
 
     try {
-      const authCommand = new InitiateAuthCommand({
-        AuthFlow: 'USER_PASSWORD_AUTH',
-        ClientId: this.clientId,
-        AuthParameters: {
-          USERNAME: email,
-          PASSWORD: password,
-        },
-      });
-
-      const authResponse = await this.cognitoClient.send(authCommand);
+      const authResponse = await this.cognitoService.initiateAuth(
+        email,
+        password,
+      );
 
       // Check if user needs to change password (first login with temp password)
       if (authResponse.ChallengeName === 'NEW_PASSWORD_REQUIRED') {
@@ -237,15 +205,9 @@ export class AuthService {
     expiresIn: number;
   }> {
     try {
-      const refreshCommand = new InitiateAuthCommand({
-        AuthFlow: 'REFRESH_TOKEN_AUTH',
-        ClientId: this.clientId,
-        AuthParameters: {
-          REFRESH_TOKEN: refreshTokenDto.refreshToken,
-        },
-      });
-
-      const refreshResponse = await this.cognitoClient.send(refreshCommand);
+      const refreshResponse = await this.cognitoService.refreshTokens(
+        refreshTokenDto.refreshToken,
+      );
 
       if (!refreshResponse.AuthenticationResult) {
         throw new UnauthorizedException('Invalid refresh token');
@@ -270,13 +232,11 @@ export class AuthService {
     changePasswordDto: ChangePasswordDto,
   ): Promise<{ message: string }> {
     try {
-      const changePasswordCommand = new ChangePasswordCommand({
-        AccessToken: accessToken,
-        PreviousPassword: changePasswordDto.oldPassword,
-        ProposedPassword: changePasswordDto.newPassword,
-      });
-
-      await this.cognitoClient.send(changePasswordCommand);
+      await this.cognitoService.changePassword(
+        accessToken,
+        changePasswordDto.oldPassword,
+        changePasswordDto.newPassword,
+      );
 
       return { message: 'Password changed successfully' };
     } catch (error: any) {
@@ -321,13 +281,9 @@ export class AuthService {
 
     // Update role in Cognito
     try {
-      const updateCommand = new AdminUpdateUserAttributesCommand({
-        UserPoolId: this.userPoolId,
-        Username: user.cognitoSub,
-        UserAttributes: [{ Name: 'custom:role', Value: role }],
-      });
-
-      await this.cognitoClient.send(updateCommand);
+      await this.cognitoService.adminUpdateUserAttributes(user.cognitoSub, [
+        { Name: 'custom:role', Value: role },
+      ]);
     } catch (error) {
       // Log error but don't fail the request
       console.error('Failed to update Cognito role:', error);
@@ -353,13 +309,10 @@ export class AuthService {
     confirmEmailDto: ConfirmEmailDto,
   ): Promise<{ message: string }> {
     try {
-      const confirmCommand = new ConfirmSignUpCommand({
-        ClientId: this.clientId,
-        Username: confirmEmailDto.email,
-        ConfirmationCode: confirmEmailDto.code,
-      });
-
-      await this.cognitoClient.send(confirmCommand);
+      await this.cognitoService.confirmEmail(
+        confirmEmailDto.email,
+        confirmEmailDto.code,
+      );
 
       return {
         message: 'Email verified successfully. You can now log in.',
@@ -394,12 +347,7 @@ export class AuthService {
     resendDto: ResendConfirmationDto,
   ): Promise<{ message: string }> {
     try {
-      const resendCommand = new ResendConfirmationCodeCommand({
-        ClientId: this.clientId,
-        Username: resendDto.email,
-      });
-
-      await this.cognitoClient.send(resendCommand);
+      await this.cognitoService.resendConfirmationCode(resendDto.email);
 
       return {
         message: 'Verification code sent to your email.',
@@ -451,24 +399,23 @@ export class AuthService {
       // Generate secure temporary password
       const temporaryPassword = this.generateTemporaryPassword();
 
-      // Create user in Cognito with AdminCreateUser
-      const createUserCommand = new AdminCreateUserCommand({
-        UserPoolId: this.userPoolId,
-        Username: email,
-        TemporaryPassword: temporaryPassword,
-        UserAttributes: [
-          { Name: 'email', Value: email },
-          { Name: 'email_verified', Value: 'true' }, // Auto-verify email
-          { Name: 'given_name', Value: firstName },
-          { Name: 'family_name', Value: lastName },
-          ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
-          { Name: 'custom:role', Value: role },
-        ],
-        MessageAction: 'SUPPRESS', // Don't send Cognito's default email
-      });
+      // Build user attributes for Cognito
+      const attributes = [
+        { Name: 'email', Value: email },
+        { Name: 'email_verified', Value: 'true' }, // Auto-verify email
+        { Name: 'given_name', Value: firstName },
+        { Name: 'family_name', Value: lastName },
+        ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
+        { Name: 'custom:role', Value: role },
+      ];
 
-      const createUserResponse =
-        await this.cognitoClient.send(createUserCommand);
+      // Create user in Cognito with AdminCreateUser
+      const createUserResponse = await this.cognitoService.adminCreateUser(
+        email,
+        temporaryPassword,
+        attributes,
+        true, // Suppress Cognito's default email
+      );
 
       if (!createUserResponse.User?.Username) {
         throw new InternalServerErrorException(
@@ -545,17 +492,11 @@ export class AuthService {
     expiresIn: number;
   }> {
     try {
-      const respondCommand = new RespondToAuthChallengeCommand({
-        ClientId: this.clientId,
-        ChallengeName: 'NEW_PASSWORD_REQUIRED',
-        Session: session,
-        ChallengeResponses: {
-          USERNAME: email,
-          NEW_PASSWORD: newPassword,
-        },
-      });
-
-      const response = await this.cognitoClient.send(respondCommand);
+      const response = await this.cognitoService.respondToNewPasswordChallenge(
+        email,
+        session,
+        newPassword,
+      );
 
       if (!response.AuthenticationResult) {
         throw new UnauthorizedException('Failed to complete password change');

@@ -2,12 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole, UserStatus } from './entities/user.entity';
+import { CognitoService } from '../cognito/cognito.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private cognitoService: CognitoService,
   ) {}
 
   /**
@@ -43,6 +45,36 @@ export class UsersService {
     return await this.userRepository.findOne({
       where: { id: userId },
     });
+  }
+
+  /**
+   * Find user by email
+   * Checks both database and Cognito to ensure user exists in both systems
+   *
+   * @param email - The email to search for
+   * @returns User if found in both database and Cognito, null otherwise
+   */
+  async findByEmail(email: string): Promise<User | null> {
+    // Check database first
+    const user = await this.userRepository.findOne({
+      where: { email },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    // Verify user also exists in Cognito
+    const existsInCognito = await this.cognitoService.userExists(email);
+
+    if (!existsInCognito) {
+      console.warn(
+        `[UsersService] User ${email} exists in database but not in Cognito`,
+      );
+      return null;
+    }
+
+    return user;
   }
 
   /**

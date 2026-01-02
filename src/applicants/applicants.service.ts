@@ -22,6 +22,7 @@ import { ActivationService } from '../activation/activation.service';
 import { ActivationActionType } from '../users/enums/activation-action-type.enum';
 import { OnboardingStepsService } from '../onboarding/services/onboarding-steps.service';
 import { OnboardingStepKey } from '../onboarding/entities/user-onboarding-step.entity';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class ApplicantsService {
@@ -41,6 +42,7 @@ export class ApplicantsService {
     private readonly authService: AuthService,
     private readonly activationService: ActivationService,
     private readonly onboardingStepsService: OnboardingStepsService,
+    private readonly usersService: UsersService,
   ) {}
 
   async create(createApplicantDto: CreateApplicantDto): Promise<Applicant> {
@@ -57,9 +59,9 @@ export class ApplicantsService {
       }
 
       // Check if user with email already exists
-      const existingUser = await this.userRepository.findOne({
-        where: { email: createApplicantDto.email },
-      });
+      const existingUser = await this.usersService.findByEmail(
+        createApplicantDto.email,
+      );
 
       if (existingUser) {
         throw new ConflictException(

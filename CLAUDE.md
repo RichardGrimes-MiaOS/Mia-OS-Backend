@@ -40,6 +40,7 @@ src/
 │   ├── dto/
 │   ├── guards/
 │   └── strategies/
+├── cognito/                 # Central AWS Cognito service (global module)
 ├── common/                  # Shared utilities
 │   ├── filters/
 │   ├── interceptors/
@@ -162,10 +163,15 @@ pnpm test:e2e              # Run end-to-end tests
 # Code Quality
 pnpm lint                  # Run ESLint with auto-fix
 pnpm format                # Format code with Prettier
+npx tsc --noEmit           # Check TypeScript errors without emitting files
 
 # Database
 pnpm create-super-admin    # Create initial super admin user
 ```
+
+## Validation Rules
+
+- **TypeScript Check**: Always run `npx tsc --noEmit` after making code changes to ensure there are no TypeScript errors before committing.
 
 ## Important Notes
 
@@ -179,10 +185,12 @@ pnpm create-super-admin    # Create initial super admin user
 
 ### AWS Cognito Integration
 
+- **Central CognitoService**: Always use `CognitoService` from `src/cognito/` for all Cognito operations. Never instantiate `CognitoIdentityProviderClient` directly in other services.
 - **Token Expiration**: Access tokens expire in 1 hour (configurable in AWS, not backend code)
 - **Token Refresh**: Use refresh tokens for automatic token renewal (handled client-side)
 - **User Profile**: Call `GET /auth/profile` after login to get user details
 - **ID Token**: Contains user claims but decode server-side for security
+- **User Existence Check**: Use `UsersService.findByEmail()` which validates user exists in both database AND Cognito
 
 ### Common Gotchas
 

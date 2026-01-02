@@ -44,6 +44,7 @@ import { DailyPlanModule } from './daily-plan/daily-plan.module';
 import { UserDailyPlan } from './daily-plan/entities/user-daily-plan.entity';
 import { FlowbarModule } from './flowbar/flowbar.module';
 import { ActionRecommendation } from './flowbar/entities/action-recommendation.entity';
+import { CognitoModule } from './cognito/cognito.module';
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { ActionRecommendation } from './flowbar/entities/action-recommendation.e
     CadenceModule,
     DailyPlanModule,
     FlowbarModule,
+    CognitoModule,
   ],
   controllers: [AppController],
   providers: [

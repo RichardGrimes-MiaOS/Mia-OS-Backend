@@ -11,6 +11,7 @@ import { EmailModule } from '../email/email.module';
 import { AuthModule } from '../auth/auth.module';
 import { ActivationModule } from '../activation/activation.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { OnboardingModule } from '../onboarding/onboarding.module';
     forwardRef(() => AuthModule),
     ActivationModule,
     OnboardingModule,
+    UsersModule,
   ],
   controllers: [ApplicantsController],
   providers: [ApplicantsService],
