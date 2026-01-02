@@ -69,10 +69,10 @@ export class EmailService {
       }),
     });
 
-    this.fromEmail = process.env.SES_FROM_EMAIL || 'noreply@yourdomain.com';
+    this.fromEmail = process.env.SES_FROM_EMAIL!;
 
     console.log(
-      `[EmailService] Initialized with ${isDevelopment ? 'local credentials' : 'IAM role'} in ${process.env.AWS_REGION || 'us-east-1'}`,
+      `[EmailService] Initialized with ${isDevelopment ? 'local credentials' : 'IAM role'} in ${process.env.AWS_REGION || 'us-east-2'}`,
     );
   }
 
@@ -321,7 +321,9 @@ If you have any questions, please contact our support team at support@mia.com
       });
 
       await this.sesClient.send(command);
-      console.log(`Activation email sent to ${recipientEmail} for user ${data.userId}`);
+      console.log(
+        `Activation email sent to ${recipientEmail} for user ${data.userId}`,
+      );
     } catch (error) {
       console.error('Failed to send activation email via SES:', error);
       // Don't throw error - log for monitoring
@@ -394,7 +396,7 @@ This is an automated notification from the MIA CRM system.
         },
         Message: {
           Subject: {
-            Data: 'Congratulations! You\'re Now an Active Agent - MIA',
+            Data: "Congratulations! You're Now an Active Agent - MIA",
             Charset: 'UTF-8',
           },
           Body: {
@@ -592,7 +594,10 @@ If you have any questions about the feedback, please contact your team lead or s
       await this.sesClient.send(command);
       console.log(`Application rejected email sent to ${data.email}`);
     } catch (error) {
-      console.error('Failed to send application rejected email via SES:', error);
+      console.error(
+        'Failed to send application rejected email via SES:',
+        error,
+      );
       // Don't throw error - log for monitoring
     }
   }

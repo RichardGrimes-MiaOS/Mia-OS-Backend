@@ -156,6 +156,15 @@ export class AuthService {
   > {
     const { email, password } = loginDto;
 
+    // Check if user exists in database before authenticating with Cognito
+    const user = await this.userRepository.findOne({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
     try {
       const authCommand = new InitiateAuthCommand({
         AuthFlow: 'USER_PASSWORD_AUTH',
@@ -183,22 +192,16 @@ export class AuthService {
 
       // Update lastLogin timestamp and track login event
       try {
-        const user = await this.userRepository.findOne({
-          where: { email },
+        user.lastLogin = new Date();
+        await this.userRepository.save(user);
+
+        // Track login event
+        await this.analyticsService.trackEvent({
+          userId: user.id,
+          eventType: EventType.LOGIN,
+          role: user.role,
+          affiliateId: user.affiliate_profile_id,
         });
-
-        if (user) {
-          user.lastLogin = new Date();
-          await this.userRepository.save(user);
-
-          // Track login event
-          await this.analyticsService.trackEvent({
-            userId: user.id,
-            eventType: EventType.LOGIN,
-            role: user.role,
-            affiliateId: user.affiliate_profile_id,
-          });
-        }
       } catch (dbError) {
         // Log error but don't fail the login
         console.error('Failed to update lastLogin:', dbError);
