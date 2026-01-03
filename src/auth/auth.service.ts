@@ -88,9 +88,7 @@ export class AuthService {
       }
 
       if (error.name === 'UsernameExistsException') {
-        throw new ConflictException(
-          'User with this email already exists in Cognito',
-        );
+        throw new ConflictException('User with this email already exists');
       }
 
       if (error.name === 'InvalidPasswordException') {
@@ -422,9 +420,7 @@ export class AuthService {
       );
     } catch (error: any) {
       if (error.name === 'UsernameExistsException') {
-        throw new ConflictException(
-          'User with this email already exists in Cognito',
-        );
+        throw new ConflictException('User with this email already exists');
       }
       if (error.name === 'InvalidPasswordException') {
         throw new BadRequestException('Password does not meet requirements');
@@ -434,14 +430,12 @@ export class AuthService {
       }
       console.error('Cognito create user error:', error);
       throw new InternalServerErrorException(
-        `Failed to create user in Cognito: ${error.message || 'Unknown error'}`,
+        `Failed to create user: ${error.message || 'Unknown error'}`,
       );
     }
 
     if (!createUserResponse.User?.Username) {
-      throw new InternalServerErrorException(
-        'Failed to create user in Cognito',
-      );
+      throw new InternalServerErrorException('Failed to create user');
     }
 
     // Get the Cognito Sub from the user attributes
@@ -551,9 +545,7 @@ export class AuthService {
       );
     } catch (error: any) {
       if (error.name === 'UsernameExistsException') {
-        throw new ConflictException(
-          'User with this email already exists in Cognito',
-        );
+        throw new ConflictException('User with this email already exists');
       }
       if (error.name === 'InvalidPasswordException') {
         throw new BadRequestException('Password does not meet requirements');
@@ -563,14 +555,12 @@ export class AuthService {
       }
       console.error('Cognito create user error:', error);
       throw new InternalServerErrorException(
-        `Failed to create user in Cognito: ${error.message || 'Unknown error'}`,
+        `Failed to create user: ${error.message || 'Unknown error'}`,
       );
     }
 
     if (!createUserResponse.User?.Username) {
-      throw new InternalServerErrorException(
-        'Failed to create user in Cognito',
-      );
+      throw new InternalServerErrorException('Failed to create user');
     }
 
     // Get the Cognito Sub from the user attributes

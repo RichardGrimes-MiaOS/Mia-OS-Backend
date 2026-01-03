@@ -16,7 +16,8 @@ export class SSMService {
   }
 
   async getCadenceDay(): Promise<number> {
-    const parameterName = `/mia/${this.environment}/cycle/cadence_day`;
+    // const parameterName = `/mia/${this.environment}/cycle/cadence_day`;
+    const parameterName = `/mia/production/cycle/cadence_day`;
 
     try {
       const command = new GetParameterCommand({
@@ -50,7 +51,8 @@ export class SSMService {
   }
 
   async getCycleId(): Promise<string> {
-    const parameterName = `/mia/${this.environment}/cycle/cycle_id`;
+    // const parameterName = `/mia/${this.environment}/cycle/cycle_id`;
+    const parameterName = `/mia/production/cycle/cycle_id`;
 
     try {
       const command = new GetParameterCommand({
