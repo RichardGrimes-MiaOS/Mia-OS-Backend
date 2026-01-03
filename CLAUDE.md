@@ -41,10 +41,11 @@ src/
 │   ├── guards/
 │   └── strategies/
 ├── cognito/                 # Central AWS Cognito service (global module)
-├── common/                  # Shared utilities
+├── common/                  # Shared utilities (global module)
 │   ├── filters/
 │   ├── interceptors/
-│   └── middleware/
+│   ├── middleware/
+│   └── services/            # TransactionService, etc.
 ├── contacts/                # Contact management (CRM)
 │   ├── dto/
 │   ├── entities/
@@ -192,6 +193,34 @@ pnpm create-super-admin    # Create initial super admin user
 - **ID Token**: Contains user claims but decode server-side for security
 - **User Existence Check**: Use `UsersService.findByEmail()` which validates user exists in both database AND Cognito
 
+### Transaction Patterns
+
+- **TransactionService**: Use `TransactionService.runInTransaction()` for atomic multi-table DB operations
+  ```typescript
+  await this.transactionService.runInTransaction(async (manager) => {
+    await manager.update(User, userId, { status: 'active' });
+    await manager.update(Applicant, applicantId, { userId });
+  });
+  ```
+- **Service Methods with Transactions**: Pass optional `EntityManager` parameter to allow service methods to participate in transactions
+  ```typescript
+  // Service method signature
+  async createStep(userId: string, stepKey: string, manager?: EntityManager) {
+    const repo = manager ? manager.getRepository(Entity) : this.repository;
+    // ... use repo for operations
+  }
+
+  // Caller usage within transaction
+  await this.transactionService.runInTransaction(async (manager) => {
+    await this.stepsService.createStep(userId, 'step1', manager);
+  });
+  ```
+- **Saga Pattern for External Services**: When combining Cognito operations with DB operations:
+  1. Perform external service operation first (Cognito)
+  2. Perform DB operations in transaction
+  3. If DB fails, execute compensating transaction (e.g., delete Cognito user)
+- **When to Use Transactions**: Multi-table writes that must succeed or fail together (e.g., creating user + linking applicant + creating onboarding steps)
+
 ### Common Gotchas
 
 1. **Module Registration**: Always add new modules to `app.module.ts` imports
@@ -203,6 +232,7 @@ pnpm create-super-admin    # Create initial super admin user
 7. **File Uploads**: Generate S3 presigned URLs for client-side direct uploads
 8. **Email Sending**: AWS SES requires verified sender email addresses
 9. **Database Sync**: TypeORM auto-syncs schema in development - just create entities, no migrations needed
+10. **Transactions**: Service methods using injected repositories don't participate in external transactions - pass `EntityManager` parameter
 
 ### Onboarding Workflows
 

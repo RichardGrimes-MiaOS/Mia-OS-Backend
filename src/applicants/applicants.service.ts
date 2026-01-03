@@ -14,7 +14,7 @@ import { UpdateApplicantDto } from './dto/update-applicant.dto';
 import { UpdateApplicantStatusDto } from './dto/update-applicant-status.dto';
 import { EmailService } from '../email/email.service';
 import { AuthService } from '../auth/auth.service';
-import { User, UserRole } from '../users/entities/user.entity';
+import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { AffiliateProfile } from '../affiliates/entities/affiliate-profile.entity';
 import { AffiliateEvents } from '../affiliates/entities/affiliate-events.entity';
 import { AffiliateUserPerformance } from '../affiliates/entities/affiliate-user-performance.entity';
@@ -23,6 +23,8 @@ import { ActivationActionType } from '../users/enums/activation-action-type.enum
 import { OnboardingStepsService } from '../onboarding/services/onboarding-steps.service';
 import { OnboardingStepKey } from '../onboarding/entities/user-onboarding-step.entity';
 import { UsersService } from '../users/users.service';
+import { TransactionService } from '../common/services/transaction.service';
+import { CognitoService } from '../cognito/cognito.service';
 
 @Injectable()
 export class ApplicantsService {
@@ -43,6 +45,8 @@ export class ApplicantsService {
     private readonly activationService: ActivationService,
     private readonly onboardingStepsService: OnboardingStepsService,
     private readonly usersService: UsersService,
+    private readonly transactionService: TransactionService,
+    private readonly cognitoService: CognitoService,
   ) {}
 
   async create(createApplicantDto: CreateApplicantDto): Promise<Applicant> {
@@ -227,44 +231,49 @@ export class ApplicantsService {
     updatedById: string,
   ): Promise<Applicant> {
     const applicant = await this.findOne(id);
-
     const oldStatus = applicant.status;
+
+    // If status changed to ACCEPTED, create user account (handles status update atomically)
+    if (
+      oldStatus !== ApplicantStatus.ACCEPTED &&
+      updateStatusDto.status === ApplicantStatus.ACCEPTED
+    ) {
+      // createUserFromApplicant handles everything atomically:
+      // - Cognito user creation
+      // - DB user creation + applicant status update + onboarding steps (in one transaction)
+      // - Throws on failure so frontend can display error
+      await this.createUserFromApplicant(applicant, updatedById);
+
+      // Track affiliate conversion if applicant has referral code (for AffiliateProfile)
+      if (applicant.referral_code) {
+        await this.trackAffiliateConversion(applicant.referral_code);
+      }
+
+      // Track affiliate user conversion if applicant has referral link (for affiliate_only users)
+      if (applicant.referral_link) {
+        await this.trackAffiliateUserConversion(applicant.referral_link);
+      }
+
+      // Reload applicant with relations to return complete data
+      return await this.findOne(id);
+    }
+
+    // For non-ACCEPTED status changes, just update the applicant
     applicant.status = updateStatusDto.status;
     applicant.updatedById = updatedById;
 
     try {
-      // Save the status and updatedById first
-      const savedApplicant = await this.applicantRepository.save(applicant);
-
-      // If status changed to ACCEPTED, create user account
-      if (
-        oldStatus !== ApplicantStatus.ACCEPTED &&
-        updateStatusDto.status === ApplicantStatus.ACCEPTED
-      ) {
-        // Pass the saved applicant to ensure updatedById is persisted
-        await this.createUserFromApplicant(savedApplicant);
-
-        // Track affiliate conversion if applicant has referral code (for AffiliateProfile)
-        if (savedApplicant.referral_code) {
-          await this.trackAffiliateConversion(savedApplicant.referral_code);
-        }
-
-        // Track affiliate user conversion if applicant has referral link (for affiliate_only users)
-        if (savedApplicant.referral_link) {
-          await this.trackAffiliateUserConversion(savedApplicant.referral_link);
-        }
-      }
+      await this.applicantRepository.save(applicant);
 
       // If status changed to REJECTED, send rejection email
       if (
         oldStatus !== ApplicantStatus.REJECTED &&
         updateStatusDto.status === ApplicantStatus.REJECTED
       ) {
-        // Send rejection email with notes
         await this.emailService.sendApplicationRejectedEmail({
-          email: savedApplicant.email,
-          firstName: savedApplicant.firstName,
-          lastName: savedApplicant.lastName,
+          email: applicant.email,
+          firstName: applicant.firstName,
+          lastName: applicant.lastName,
           notes: updateStatusDto.notes,
         });
       }
@@ -278,80 +287,135 @@ export class ApplicantsService {
 
   /**
    * Create a user account from an approved applicant
+   *
+   * Uses Saga pattern for Cognito + DB coordination:
+   * 1. Create Cognito user (external service, outside transaction)
+   * 2. All DB operations in a single transaction (user, applicant status + link, onboarding steps)
+   * 3. If DB transaction fails, delete Cognito user (compensating transaction)
+   *
+   * Throws on failure so frontend can display error to admin.
+   *
+   * @param applicant - The applicant to create user from
+   * @param updatedById - The admin who approved the applicant
    */
-  private async createUserFromApplicant(applicant: Applicant): Promise<void> {
-    try {
-      // Create user with temporary password
+  private async createUserFromApplicant(
+    applicant: Applicant,
+    updatedById: string,
+  ): Promise<void> {
+    // Step 1: Create Cognito user only (checks DB for existing user, creates in Cognito)
+    let cognitoSub: string;
+    let temporaryPassword: string;
 
-      const { user, temporaryPassword } = await this.authService.createUser(
+    try {
+      const cognitoResult = await this.authService.createCognitoUserOnly(
         applicant.email,
         applicant.firstName,
         applicant.lastName,
         applicant.phone,
         UserRole.APPLICANT, // Start as applicant, will be promoted to agent after onboarding
-        applicant.updatedById, // Track which admin approved/created the user
       );
-      console.log(temporaryPassword);
-
-      // Copy isLicensed from applicant to user and set approved_at
-      const approvedAt = new Date();
-      await this.userRepository.update(user.id, {
-        isLicensed: applicant.isLicensed,
-        approved_at: approvedAt,
-      });
-
-      // Link applicant to created user - only update userId without overwriting other fields
-      await this.applicantRepository.update(applicant.id, {
-        userId: user.id,
-      });
-
-      console.log(
-        `[ApplicantsService] Linked applicant ${applicant.id} to user ${user.id}`,
+      cognitoSub = cognitoResult.cognitoSub;
+      temporaryPassword = cognitoResult.temporaryPassword;
+    } catch (cognitoError: any) {
+      // Re-throw with context so frontend can display the error
+      throw new BadRequestException(
+        cognitoError.message || 'Failed to create user in Cognito',
       );
+    }
 
-      // Track onboarding step: account_created (instant step - both entered and completed)
-      // Use approved_at as the timestamp for when onboarding actually starts
-      await this.onboardingStepsService.createCompletedStep(
-        user.id,
-        OnboardingStepKey.ACCOUNT_CREATED,
-        approvedAt,
-        approvedAt,
-      );
+    // Step 2: All DB operations in a single transaction
+    const approvedAt = new Date();
+    let user: User;
 
-      // Auto-progress to licensed_check step with same timestamp
-      await this.onboardingStepsService.enterStep(
-        user.id,
-        OnboardingStepKey.LICENSED_CHECK,
-        approvedAt,
-      );
+    try {
+      user = await this.transactionService.runInTransaction(async (manager) => {
+        // Create user with ALL fields at once
+        const newUser = manager.create(User, {
+          cognitoSub,
+          email: applicant.email,
+          firstName: applicant.firstName,
+          lastName: applicant.lastName,
+          phone: applicant.phone,
+          role: UserRole.APPLICANT,
+          status: UserStatus.ACTIVE,
+          isLicensed: applicant.isLicensed,
+          approved_at: approvedAt,
+          createdById: updatedById,
+        });
+        await manager.save(User, newUser);
 
-      // Send welcome email with temporary credentials
-      console.log(`[ApplicantsService] Sending welcome email to ${user.email}`);
-      this.emailService
-        .sendWelcomeEmail({
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          temporaryPassword,
-          role: user.role,
-        })
-        .catch((error) => {
-          console.error('Failed to send welcome email:', error);
+        // Update applicant: status, link to user, and updatedById (all atomic)
+        await manager.update(Applicant, applicant.id, {
+          status: ApplicantStatus.ACCEPTED,
+          userId: newUser.id,
+          updatedById,
         });
 
+        // Create onboarding step: account_created (instant step - both entered and completed)
+        await this.onboardingStepsService.createCompletedStep(
+          newUser.id,
+          OnboardingStepKey.ACCOUNT_CREATED,
+          approvedAt,
+          approvedAt,
+          manager,
+        );
+
+        // Create onboarding step: licensed_check (entered but not completed)
+        await this.onboardingStepsService.enterStep(
+          newUser.id,
+          OnboardingStepKey.LICENSED_CHECK,
+          approvedAt,
+          manager,
+        );
+
+        return newUser;
+      });
+
       console.log(
-        `[ApplicantsService] Successfully completed user creation for applicant ${applicant.id}`,
+        `[ApplicantsService] Created user ${user.id} and linked to applicant ${applicant.id}`,
       );
-    } catch (error) {
+    } catch (dbError: any) {
+      // Compensating transaction: Delete Cognito user since DB operations failed
       console.error(
-        `[ApplicantsService] Failed to create user from applicant ${applicant.id}:`,
+        `[ApplicantsService] DB transaction failed for applicant ${applicant.id}, rolling back Cognito user:`,
+        dbError.message,
       );
-      console.error(`Error name: ${error.name}`);
-      console.error(`Error message: ${error.message}`);
-      console.error(`Full error:`, error);
-      // Don't throw - we don't want to fail the status update if user creation fails
-      // Admin can manually retry or create the user
+
+      try {
+        await this.cognitoService.adminDeleteUser(applicant.email);
+        console.log(
+          `[ApplicantsService] Compensating transaction: Deleted Cognito user ${applicant.email}`,
+        );
+      } catch (deleteError: any) {
+        console.error(
+          `[ApplicantsService] Failed to delete Cognito user ${applicant.email} during rollback:`,
+          deleteError.message,
+        );
+      }
+
+      // Re-throw so frontend can display the error
+      throw new BadRequestException(
+        `Failed to create user account: ${dbError.message}`,
+      );
     }
+
+    // Step 3: Send welcome email (outside transaction - non-critical)
+    console.log(`[ApplicantsService] Sending welcome email to ${user.email}`);
+    this.emailService
+      .sendWelcomeEmail({
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        temporaryPassword,
+        role: user.role,
+      })
+      .catch((error) => {
+        console.error('Failed to send welcome email:', error);
+      });
+
+    console.log(
+      `[ApplicantsService] Successfully completed user creation for applicant ${applicant.id}`,
+    );
   }
 
   async remove(id: string): Promise<void> {

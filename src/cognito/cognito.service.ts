@@ -4,6 +4,7 @@ import {
   CognitoIdentityProviderClient,
   AdminGetUserCommand,
   AdminGetUserCommandOutput,
+  AdminDeleteUserCommand,
   SignUpCommand,
   SignUpCommandOutput,
   InitiateAuthCommand,
@@ -288,6 +289,23 @@ export class CognitoService {
       UserPoolId: this.userPoolId,
       Username: username,
       UserAttributes: attributes,
+    });
+
+    await this.cognitoClient.send(command);
+  }
+
+  // ==================== USER DELETION ====================
+
+  /**
+   * Delete a user from Cognito (admin operation)
+   * Used for compensating transactions when DB operations fail after Cognito user creation
+   *
+   * @param email - User's email (username)
+   */
+  async adminDeleteUser(email: string): Promise<void> {
+    const command = new AdminDeleteUserCommand({
+      UserPoolId: this.userPoolId,
+      Username: email,
     });
 
     await this.cognitoClient.send(command);

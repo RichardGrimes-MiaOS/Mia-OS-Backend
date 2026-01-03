@@ -23,7 +23,7 @@ export class AnalyticsService {
     private userRepository: Repository<User>,
     private readonly ssmService: SSMService,
   ) {}
-
+ 
   /**
    * Track a user event and update last_active_at
    * This is the ONLY method you should call to log events

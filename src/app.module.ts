@@ -45,6 +45,7 @@ import { UserDailyPlan } from './daily-plan/entities/user-daily-plan.entity';
 import { FlowbarModule } from './flowbar/flowbar.module';
 import { ActionRecommendation } from './flowbar/entities/action-recommendation.entity';
 import { CognitoModule } from './cognito/cognito.module';
+import { CommonModule } from './common/common.module';
 
 @Module({
   imports: [
@@ -103,6 +104,7 @@ import { CognitoModule } from './cognito/cognito.module';
     DailyPlanModule,
     FlowbarModule,
     CognitoModule,
+    CommonModule,
   ],
   controllers: [AppController],
   providers: [

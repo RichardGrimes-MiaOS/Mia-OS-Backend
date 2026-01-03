@@ -377,6 +377,9 @@ export class AuthService {
   /**
    * Create a user with a temporary password (for admin-created users)
    * Email is auto-verified and user must change password on first login
+   *
+   * Uses Saga pattern: If DB operations fail after Cognito user creation,
+   * the Cognito user is deleted as a compensating transaction.
    */
   async createUser(
     email: string,
@@ -386,55 +389,74 @@ export class AuthService {
     role: UserRole,
     createdById?: string,
   ): Promise<{ user: User; temporaryPassword: string }> {
+    // Check if user already exists in database
+    const existingUser = await this.userRepository.findOne({
+      where: { email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists');
+    }
+
+    // Generate secure temporary password
+    const temporaryPassword = this.generateTemporaryPassword();
+
+    // Build user attributes for Cognito
+    const attributes = [
+      { Name: 'email', Value: email },
+      { Name: 'email_verified', Value: 'true' }, // Auto-verify email
+      { Name: 'given_name', Value: firstName },
+      { Name: 'family_name', Value: lastName },
+      ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
+      { Name: 'custom:role', Value: role },
+    ];
+
+    // Step 1: Create user in Cognito (external service - cannot be rolled back by DB transaction)
+    let createUserResponse;
     try {
-      // Check if user already exists in database
-      const existingUser = await this.userRepository.findOne({
-        where: { email },
-      });
-
-      if (existingUser) {
-        throw new ConflictException('User with this email already exists');
-      }
-
-      // Generate secure temporary password
-      const temporaryPassword = this.generateTemporaryPassword();
-
-      // Build user attributes for Cognito
-      const attributes = [
-        { Name: 'email', Value: email },
-        { Name: 'email_verified', Value: 'true' }, // Auto-verify email
-        { Name: 'given_name', Value: firstName },
-        { Name: 'family_name', Value: lastName },
-        ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
-        { Name: 'custom:role', Value: role },
-      ];
-
-      // Create user in Cognito with AdminCreateUser
-      const createUserResponse = await this.cognitoService.adminCreateUser(
+      createUserResponse = await this.cognitoService.adminCreateUser(
         email,
         temporaryPassword,
         attributes,
         true, // Suppress Cognito's default email
       );
-
-      if (!createUserResponse.User?.Username) {
-        throw new InternalServerErrorException(
-          'Failed to create user in Cognito',
+    } catch (error: any) {
+      if (error.name === 'UsernameExistsException') {
+        throw new ConflictException(
+          'User with this email already exists in Cognito',
         );
       }
-
-      // Get the Cognito Sub from the user attributes
-      const cognitoSub = createUserResponse.User.Attributes?.find(
-        (attr) => attr.Name === 'sub',
-      )?.Value;
-
-      if (!cognitoSub) {
-        throw new InternalServerErrorException(
-          'Failed to retrieve Cognito Sub',
-        );
+      if (error.name === 'InvalidPasswordException') {
+        throw new BadRequestException('Password does not meet requirements');
       }
+      if (error.name === 'InvalidParameterException') {
+        throw new BadRequestException(`Invalid parameter: ${error.message}`);
+      }
+      console.error('Cognito create user error:', error);
+      throw new InternalServerErrorException(
+        `Failed to create user in Cognito: ${error.message || 'Unknown error'}`,
+      );
+    }
 
-      // Create user record in database
+    if (!createUserResponse.User?.Username) {
+      throw new InternalServerErrorException(
+        'Failed to create user in Cognito',
+      );
+    }
+
+    // Get the Cognito Sub from the user attributes
+    const cognitoSub = createUserResponse.User.Attributes?.find(
+      (attr) => attr.Name === 'sub',
+    )?.Value;
+
+    if (!cognitoSub) {
+      // Compensating transaction: Delete Cognito user if we can't get the sub
+      await this.deleteCognitoUserSafe(email);
+      throw new InternalServerErrorException('Failed to retrieve Cognito Sub');
+    }
+
+    // Step 2: Create user in database (with compensating transaction if it fails)
+    try {
       const user = this.userRepository.create({
         cognitoSub,
         email,
@@ -452,28 +474,134 @@ export class AuthService {
         user,
         temporaryPassword,
       };
-    } catch (error: any) {
-      if (error instanceof ConflictException) {
-        throw error;
-      }
+    } catch (dbError: any) {
+      // Compensating transaction: Delete Cognito user since DB save failed
+      console.error(
+        `[AuthService] DB save failed, rolling back Cognito user: ${email}`,
+        dbError,
+      );
+      await this.deleteCognitoUserSafe(email);
 
+      if (dbError instanceof ConflictException) {
+        throw dbError;
+      }
+      throw new InternalServerErrorException(
+        `Failed to create user in database: ${dbError.message || 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Create a Cognito user only (no DB record)
+   * Used when caller wants to handle DB operations in their own transaction.
+   *
+   * This method:
+   * 1. Checks if user already exists in DB (throws ConflictException if yes)
+   * 2. Creates user in Cognito with temporary password
+   * 3. Returns cognitoSub and temporaryPassword for caller to use
+   *
+   * Caller is responsible for:
+   * - Creating the DB user record
+   * - Implementing compensating transaction (delete Cognito user) if DB fails
+   *
+   * @param email - User email
+   * @param firstName - User first name
+   * @param lastName - User last name
+   * @param phone - User phone (optional)
+   * @param role - User role
+   * @returns cognitoSub and temporaryPassword
+   */
+  async createCognitoUserOnly(
+    email: string,
+    firstName: string,
+    lastName: string,
+    phone: string | undefined,
+    role: UserRole,
+  ): Promise<{ cognitoSub: string; temporaryPassword: string }> {
+    // Check if user already exists in database
+    const existingUser = await this.userRepository.findOne({
+      where: { email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists');
+    }
+
+    // Generate secure temporary password
+    const temporaryPassword = this.generateTemporaryPassword();
+
+    // Build user attributes for Cognito
+    const attributes = [
+      { Name: 'email', Value: email },
+      { Name: 'email_verified', Value: 'true' },
+      { Name: 'given_name', Value: firstName },
+      { Name: 'family_name', Value: lastName },
+      ...(phone ? [{ Name: 'phone_number', Value: phone }] : []),
+      { Name: 'custom:role', Value: role },
+    ];
+
+    // Create user in Cognito
+    let createUserResponse;
+    try {
+      createUserResponse = await this.cognitoService.adminCreateUser(
+        email,
+        temporaryPassword,
+        attributes,
+        true, // Suppress Cognito's default email
+      );
+    } catch (error: any) {
       if (error.name === 'UsernameExistsException') {
         throw new ConflictException(
           'User with this email already exists in Cognito',
         );
       }
-
       if (error.name === 'InvalidPasswordException') {
         throw new BadRequestException('Password does not meet requirements');
       }
-
       if (error.name === 'InvalidParameterException') {
         throw new BadRequestException(`Invalid parameter: ${error.message}`);
       }
-
       console.error('Cognito create user error:', error);
       throw new InternalServerErrorException(
-        `Failed to create user: ${error.message || 'Unknown error'}`,
+        `Failed to create user in Cognito: ${error.message || 'Unknown error'}`,
+      );
+    }
+
+    if (!createUserResponse.User?.Username) {
+      throw new InternalServerErrorException(
+        'Failed to create user in Cognito',
+      );
+    }
+
+    // Get the Cognito Sub from the user attributes
+    const cognitoSub = createUserResponse.User.Attributes?.find(
+      (attr) => attr.Name === 'sub',
+    )?.Value;
+
+    if (!cognitoSub) {
+      // Delete Cognito user if we can't get the sub
+      await this.deleteCognitoUserSafe(email);
+      throw new InternalServerErrorException('Failed to retrieve Cognito Sub');
+    }
+
+    return { cognitoSub, temporaryPassword };
+  }
+
+  /**
+   * Safely delete a Cognito user (compensating transaction helper)
+   * Logs errors but doesn't throw to avoid masking the original error
+   */
+  private async deleteCognitoUserSafe(email: string): Promise<void> {
+    try {
+      await this.cognitoService.adminDeleteUser(email);
+      console.log(
+        `[AuthService] Compensating transaction: Deleted Cognito user ${email}`,
+      );
+    } catch (deleteError) {
+      // Log but don't throw - we don't want to mask the original error
+      console.error(
+        `[AuthService] Failed to delete Cognito user ${email} during rollback:`,
+        deleteError,
       );
     }
   }
