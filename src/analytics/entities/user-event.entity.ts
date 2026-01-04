@@ -55,8 +55,8 @@ export class UserEvent {
   @Column({ type: 'int', nullable: true })
   cadence_day: number;
 
-  @Column({ type: 'uuid', nullable: true })
-  cycle_id: string;
+  @Column({ type: 'int', nullable: true })
+  cycle_id: number;
 
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;

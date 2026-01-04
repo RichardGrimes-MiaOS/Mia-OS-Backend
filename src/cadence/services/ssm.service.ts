@@ -50,7 +50,7 @@ export class SSMService {
     }
   }
 
-  async getCycleId(): Promise<string> {
+  async getCycleId(): Promise<number> {
     // const parameterName = `/mia/${this.environment}/cycle/cycle_id`;
     const parameterName = `/mia/development/cycle/cycle_id`;
 
@@ -67,7 +67,13 @@ export class SSMService {
         );
       }
 
-      return response.Parameter.Value;
+      const cycleId = parseInt(response.Parameter.Value, 10);
+
+      if (isNaN(cycleId)) {
+        throw new Error(`Invalid cycle ID value: ${response.Parameter.Value}`);
+      }
+
+      return cycleId;
     } catch (error) {
       console.error(
         `[SSMService] Error fetching cycle ID from ${parameterName}:`,
