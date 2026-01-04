@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, EntityManager } from 'typeorm';
 import { UserEvent, EventType } from './entities/user-event.entity';
 import { User, UserRole, UserStatus } from '../users/entities/user.entity';
 import { GetEventsQueryDto } from './dto/get-events-query.dto';
@@ -27,8 +27,19 @@ export class AnalyticsService {
   /**
    * Track a user event and update last_active_at
    * This is the ONLY method you should call to log events
+   *
+   * @param data - Event data to track
+   * @param manager - Optional EntityManager for transaction support
    */
-  async trackEvent(data: TrackEventDto): Promise<void> {
+  async trackEvent(data: TrackEventDto, manager?: EntityManager): Promise<void> {
+    // Use provided manager or fall back to injected repositories
+    const eventRepo = manager
+      ? manager.getRepository(UserEvent)
+      : this.eventRepository;
+    const userRepo = manager
+      ? manager.getRepository(User)
+      : this.userRepository;
+
     // Fetch cadence_day and cycle_id from SSM
     const [cadenceDay, cycleId] = await Promise.all([
       this.ssmService.getCadenceDay(),
@@ -36,7 +47,7 @@ export class AnalyticsService {
     ]);
 
     // Create event record
-    const event = this.eventRepository.create({
+    const event = eventRepo.create({
       user_id: data.userId,
       event_type: data.eventType,
       role: data.role,
@@ -46,11 +57,11 @@ export class AnalyticsService {
       metadata: data.metadata,
     });
 
-    await this.eventRepository.save(event);
+    await eventRepo.save(event);
 
     // Update last_active_at if user is known
     if (data.userId) {
-      await this.userRepository.update(data.userId, {
+      await userRepo.update(data.userId, {
         last_active_at: new Date(),
       });
     }

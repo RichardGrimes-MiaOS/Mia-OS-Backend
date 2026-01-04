@@ -67,14 +67,17 @@ export class OnboardingStepsService {
     // Get user for event tracking
     const user = await userRepo.findOne({ where: { id: userId } });
 
-    // Track step_started event (outside transaction - analytics can be eventually consistent)
-    await this.analyticsService.trackEvent({
-      userId,
-      eventType: EventType.STEP_STARTED,
-      role: user?.role,
-      affiliateId: user?.affiliate_profile_id,
-      metadata: { step: stepKey },
-    });
+    // Track step_started event (pass manager for transaction support)
+    await this.analyticsService.trackEvent(
+      {
+        userId,
+        eventType: EventType.STEP_STARTED,
+        role: user?.role,
+        affiliateId: user?.affiliate_profile_id,
+        metadata: { step: stepKey },
+      },
+      manager,
+    );
 
     this.logger.log(
       `User ${userId} entered step: ${stepKey} at ${enteredAt.toISOString()}`,
@@ -129,14 +132,17 @@ export class OnboardingStepsService {
     // Get user for event tracking
     const user = await userRepo.findOne({ where: { id: userId } });
 
-    // Track step_completed event (outside transaction - analytics can be eventually consistent)
-    await this.analyticsService.trackEvent({
-      userId,
-      eventType: EventType.STEP_COMPLETED,
-      role: user?.role,
-      affiliateId: user?.affiliate_profile_id,
-      metadata: { step: stepKey },
-    });
+    // Track step_completed event (pass manager for transaction support)
+    await this.analyticsService.trackEvent(
+      {
+        userId,
+        eventType: EventType.STEP_COMPLETED,
+        role: user?.role,
+        affiliateId: user?.affiliate_profile_id,
+        metadata: { step: stepKey },
+      },
+      manager,
+    );
 
     this.logger.log(
       `User ${userId} completed step: ${stepKey} at ${completedAt.toISOString()}`,
