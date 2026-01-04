@@ -24,7 +24,7 @@ export class CadenceService {
       where: {
         userId,
         logDate: today,
-        cadenceDayNumber: currentCadenceDay,
+        cadenceDay: currentCadenceDay,
       },
       relations: ['user'],
     });

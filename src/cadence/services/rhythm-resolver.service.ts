@@ -46,7 +46,7 @@ export class RhythmResolverService {
     const isEligible = await this.usersService.isEligibleForCadence(userId);
 
     if (!isEligible) {
-      const user = await this.usersService.findOne(userId);
+      const user = await this.usersService.findById(userId);
       if (!user) {
         throw new NotFoundException('User not found');
       }

@@ -18,6 +18,24 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { EventType } from '../analytics/entities/user-event.entity';
 import { CognitoService } from '../cognito/cognito.service';
 
+/** Successful authentication response with tokens */
+export interface AuthTokensResponse {
+  accessToken: string;
+  idToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+/** Challenge response when user needs to change password on first login */
+export interface AuthChallengeResponse {
+  challengeName: string;
+  session: string;
+  message: string;
+}
+
+/** Login can return either tokens or a challenge */
+export type LoginResponse = AuthTokensResponse | AuthChallengeResponse;
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -113,19 +131,7 @@ export class AuthService {
     }
   }
 
-  async login(loginDto: LoginDto): Promise<
-    | {
-        accessToken: string;
-        idToken: string;
-        refreshToken: string;
-        expiresIn: number;
-      }
-    | {
-        challengeName: string;
-        session: string;
-        message: string;
-      }
-  > {
+  async login(loginDto: LoginDto): Promise<LoginResponse> {
     const { email, password } = loginDto;
 
     // Check if user exists in database before authenticating with Cognito
@@ -603,12 +609,7 @@ export class AuthService {
     email: string,
     session: string,
     newPassword: string,
-  ): Promise<{
-    accessToken: string;
-    idToken: string;
-    refreshToken: string;
-    expiresIn: number;
-  }> {
+  ): Promise<AuthTokensResponse> {
     try {
       const response = await this.cognitoService.respondToNewPasswordChallenge(
         email,

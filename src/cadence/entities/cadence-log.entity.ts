@@ -26,10 +26,10 @@ export class CadenceLog {
   logDate: string;
 
   @Column({ type: 'int', comment: 'Cadence day number (1-10)' })
-  cadenceDayNumber: number;
+  cadenceDay: number;
 
-  @Column({ type: 'uuid', nullable: true })
-  cycleId: string | null;
+  @Column({ type: 'int', nullable: true })
+  cycleId: number;
 
   @Column({
     type: 'enum',

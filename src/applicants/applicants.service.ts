@@ -25,6 +25,8 @@ import { OnboardingStepKey } from '../onboarding/entities/user-onboarding-step.e
 import { UsersService } from '../users/users.service';
 import { TransactionService } from '../common/services/transaction.service';
 import { CognitoService } from '../cognito/cognito.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { EventType } from '../analytics/entities/user-event.entity';
 
 @Injectable()
 export class ApplicantsService {
@@ -47,6 +49,7 @@ export class ApplicantsService {
     private readonly usersService: UsersService,
     private readonly transactionService: TransactionService,
     private readonly cognitoService: CognitoService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   async create(createApplicantDto: CreateApplicantDto): Promise<Applicant> {
@@ -350,6 +353,21 @@ export class ApplicantsService {
           userId: newUser.id,
           updatedById,
         });
+
+        // Track signup completed event
+        await this.analyticsService.trackEvent(
+          {
+            userId: newUser.id,
+            eventType: EventType.SIGNUP_COMPLETED,
+            role: newUser.role,
+            affiliateId: newUser.affiliate_profile_id,
+            metadata: {
+              applicantId: applicant.id,
+              approvedBy: updatedById,
+            },
+          },
+          manager,
+        );
 
         // Create onboarding step: account_created (instant step - both entered and completed)
         await this.onboardingStepsService.createCompletedStep(

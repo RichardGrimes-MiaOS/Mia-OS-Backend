@@ -244,11 +244,11 @@ export class BestNextActionResolver {
   ): Promise<CandidateAction[]> {
     // 3A. Get current cadence day number (1-10) from AWS SSM
     // This is a global value for all users (day_01, day_02, etc.)
-    const cadenceDayNumber = await this.ssmService.getCadenceDay();
+    const cadenceDay = await this.ssmService.getCadenceDay();
 
     // 3B. Filter cadence-aligned candidates using structural bias
     const alignedCandidates = candidates.filter((candidate) =>
-      this.isCadenceAligned(candidate, cadenceDayNumber),
+      this.isCadenceAligned(candidate, cadenceDay),
     );
 
     // 3C. Apply filter-first strategy
@@ -309,7 +309,7 @@ export class BestNextActionResolver {
     userId: string,
   ): Promise<BNARecommendation> {
     // Get current cadence day to determine if winner is cadence-aligned
-    const cadenceDayNumber = await this.ssmService.getCadenceDay();
+    const cadenceDay = await this.ssmService.getCadenceDay();
 
     // 4.1. Filter by category (keep highest precedence)
     const categoryPrecedence = [
@@ -339,7 +339,7 @@ export class BestNextActionResolver {
 
     // 4.5. Build ActionableRecommendation from winner
     const metadata = ACTION_METADATA[winner.type];
-    const isAligned = this.isCadenceAligned(winner, cadenceDayNumber);
+    const isAligned = this.isCadenceAligned(winner, cadenceDay);
 
     // Determine reason_code based on category and cadence alignment
     let reasonCode: 'BLOCKER' | 'REQUIRED' | 'CADENCE_ALIGNED' | 'OPS';
@@ -354,11 +354,7 @@ export class BestNextActionResolver {
     }
 
     // Generate explanation based on decision factors
-    const explanation = this.buildExplanation(
-      winner,
-      reasonCode,
-      cadenceDayNumber,
-    );
+    const explanation = this.buildExplanation(winner, reasonCode, cadenceDay);
 
     return {
       action_type: winner.type,

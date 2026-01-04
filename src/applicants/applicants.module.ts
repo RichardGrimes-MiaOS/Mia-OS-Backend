@@ -12,6 +12,7 @@ import { AuthModule } from '../auth/auth.module';
 import { ActivationModule } from '../activation/activation.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { UsersModule } from '../users/users.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { UsersModule } from '../users/users.module';
     ActivationModule,
     OnboardingModule,
     UsersModule,
+    AnalyticsModule,
   ],
   controllers: [ApplicantsController],
   providers: [ApplicantsService],

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import { User, UserRole, UserStatus } from './entities/user.entity';
 import { CognitoService } from '../cognito/cognito.service';
 
@@ -41,10 +41,37 @@ export class UsersService {
   /**
    * Find user by ID
    */
-  async findOne(userId: string): Promise<User | null> {
+  async findById(userId: string): Promise<User | null> {
     return await this.userRepository.findOne({
       where: { id: userId },
     });
+  }
+
+  /**
+   * Find user by ID or throw NotFoundException
+   */
+  async findByIdOrFail(userId: string): Promise<User> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
+  }
+
+  /**
+   * Update user role
+   *
+   * @param userId - User ID to update
+   * @param role - New role to set
+   * @param manager - Optional EntityManager for transaction support
+   */
+  async updateRole(
+    userId: string,
+    role: UserRole,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(User) : this.userRepository;
+    await repo.update(userId, { role });
   }
 
   /**

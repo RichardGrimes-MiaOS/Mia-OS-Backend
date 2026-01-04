@@ -11,21 +11,21 @@ import { User, UserRole } from '../../users/entities/user.entity';
 
 export enum EventType {
   // Onboarding steps
-  STEP_STARTED = 'step_started',
-  STEP_COMPLETED = 'step_completed',
+  STEP_STARTED = 'STEP_STARTED',
+  STEP_COMPLETED = 'STEP_COMPLETED',
 
   // User actions
-  LOGIN = 'login',
-  DOCUMENT_UPLOADED = 'document_uploaded',
-  ROLE_UPDATED = 'role_updated',
-
+  SIGNUP_COMPLETED = 'SIGNUP_COMPLETED',
+  LOGIN = 'LOGIN',
+  DOCUMENT_UPLOADED = 'DOCUMENT_UPLOADED',
+  ROLE_UPDATED = 'ROLE_UPDATED',
+  
   // Affiliate tracking
-  REFERRAL_CLICKED = 'referral_clicked',
-  SIGNUP_COMPLETED = 'signup_completed',
-
+  REFERRAL_CLICKED = 'REFERRAL_CLICKED',
+  
   // Admin actions
-  ADMIN_APPROVED = 'admin_approved',
-  ADMIN_REJECTED = 'admin_rejected',
+  ADMIN_APPROVED = 'ADMIN_APPROVED',
+  ADMIN_REJECTED = 'ADMIN_REJECTED',
 }
 
 @Entity('user_events')

@@ -5,7 +5,8 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
+import { TransactionService } from '../common/services/transaction.service';
 import { LicensingTraining } from './entities/licensing-training.entity';
 import { LicensingExam, ExamResult } from './entities/licensing-exam.entity';
 import { LicensingExamAttempt } from './entities/licensing-exam-attempt.entity';
@@ -13,7 +14,10 @@ import { EAndOInsurance } from './entities/e-and-o-insurance.entity';
 import { ActivationRequest } from './entities/activation-request.entity';
 import { LicensedAgentIntake } from './entities/licensed-agent-intake.entity';
 import { License } from './entities/license.entity';
-import { OnboardingReviewSubmission, OnboardingReviewStatus } from './entities/onboarding-review-submission.entity';
+import {
+  OnboardingReviewSubmission,
+  OnboardingReviewStatus,
+} from './entities/onboarding-review-submission.entity';
 import { User, OnboardingStatus } from '../users/entities/user.entity';
 import { CreateLicensingTrainingDto } from './dto/create-licensing-training.dto';
 import { UpdateLicensingTrainingDto } from './dto/update-licensing-training.dto';
@@ -32,19 +36,18 @@ import { generateReferralCode } from '../affiliates/utils/generate-referral-code
 import { generateAndUploadQrCode } from '../affiliates/utils/generate-qr-code';
 import { S3Service } from './services/s3.service';
 import { OnboardingStepsService } from './services/onboarding-steps.service';
+import { LicensingTrainingService } from './services/licensing-training.service';
+import { LicensingExamService } from './services/licensing-exam.service';
 import { OnboardingStepKey } from './entities/user-onboarding-step.entity';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { EventType } from '../analytics/entities/user-event.entity';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class OnboardingService {
   constructor(
     @InjectRepository(LicensingTraining)
     private readonly licensingTrainingRepository: Repository<LicensingTraining>,
-    @InjectRepository(LicensingExam)
-    private readonly licensingExamRepository: Repository<LicensingExam>,
-    @InjectRepository(LicensingExamAttempt)
-    private readonly licensingExamAttemptRepository: Repository<LicensingExamAttempt>,
     @InjectRepository(EAndOInsurance)
     private readonly eAndOInsuranceRepository: Repository<EAndOInsurance>,
     @InjectRepository(ActivationRequest)
@@ -63,254 +66,221 @@ export class OnboardingService {
     private readonly s3Service: S3Service,
     private readonly onboardingStepsService: OnboardingStepsService,
     private readonly analyticsService: AnalyticsService,
+    private readonly transactionService: TransactionService,
+    private readonly licensingTrainingService: LicensingTrainingService,
+    private readonly licensingExamService: LicensingExamService,
+    private readonly usersService: UsersService,
   ) {}
 
   // ==================== LICENSING TRAINING ====================
 
+  /**
+   * Create licensing training record for a user
+   *
+   * This operation involves multiple writes that must succeed together:
+   * 1. Create licensing training record
+   * 2. Update user role to AGENT
+   * 3. Track role update event
+   * 4. Update onboarding steps
+   *
+   * All operations are wrapped in a transaction for atomicity.
+   */
   async createLicensingTraining(
     userId: string,
     dto: CreateLicensingTrainingDto,
   ): Promise<LicensingTraining> {
-    // Check if user exists
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    // Validate user exists before transaction
+    const user = await this.usersService.findByIdOrFail(userId);
 
-    // Check if training record already exists
-    const existing = await this.licensingTrainingRepository.findOne({
-      where: { userId },
-    });
-    if (existing) {
-      throw new ConflictException('Licensing training record already exists');
-    }
-
-    // Validate: if isRegistered is true, examfxEmail and registrationScreenshot are optional but recommended
-    if (dto.isRegistered && !dto.examfxEmail && !dto.registrationScreenshot) {
-      console.warn(
-        `[OnboardingService] User ${userId} registered but no examfxEmail or screenshot provided`,
+    // Wrap all write operations in a transaction
+    return await this.transactionService.runInTransaction(async (manager) => {
+      // Create licensing training record
+      const training = await this.licensingTrainingService.create(
+        userId,
+        dto,
+        manager,
       );
-    }
 
-    const training = this.licensingTrainingRepository.create({
-      userId,
-      ...dto,
+      // Update user role to AGENT after completing licensing training
+      await this.usersService.updateRole(userId, UserRole.AGENT, manager);
+
+      // Track role update event
+      await this.analyticsService.trackEvent(
+        {
+          userId: user.id,
+          eventType: EventType.ROLE_UPDATED,
+          role: UserRole.AGENT,
+          affiliateId: user.affiliate_profile_id,
+          metadata: {
+            previousRole: 'applicant',
+            updatedBy: 'system',
+            reason: 'licensing_training_completed',
+          },
+        },
+        manager,
+      );
+
+      // Step tracking: Standard path - licensed_check → exam_scheduled
+      await this.onboardingStepsService.completeAndProgress(
+        userId,
+        OnboardingStepKey.LICENSED_CHECK,
+        OnboardingStepKey.EXAM_SCHEDULED,
+        manager,
+      );
+
+      return training;
     });
-
-    const saved = await this.licensingTrainingRepository.save(training);
-
-    // Update user role to AGENT after completing licensing training
-    user.role = UserRole.AGENT;
-    await this.userRepository.save(user);
-
-    // Track role update event
-    await this.analyticsService.trackEvent({
-      userId: user.id,
-      eventType: EventType.ROLE_UPDATED,
-      role: UserRole.AGENT,
-      affiliateId: user.affiliate_profile_id,
-      metadata: {
-        previousRole: user.role,
-        updatedBy: 'system',
-        reason: 'licensing_training_completed',
-      },
-    });
-
-    // Step tracking: Standard path - licensed_check → exam_scheduled
-    await this.onboardingStepsService.completeAndProgress(
-      userId,
-      OnboardingStepKey.LICENSED_CHECK,
-      OnboardingStepKey.EXAM_SCHEDULED,
-    );
-
-    return saved;
   }
 
   async getLicensingTraining(userId: string): Promise<LicensingTraining> {
-    const training = await this.licensingTrainingRepository.findOne({
-      where: { userId },
-      relations: ['user'],
-    });
-
-    if (!training) {
-      throw new NotFoundException('Licensing training record not found');
-    }
-
-    return training;
+    return await this.licensingTrainingService.findByUserIdWithRelationsOrFail(
+      userId,
+    );
   }
 
   async updateLicensingTraining(
     userId: string,
     dto: UpdateLicensingTrainingDto,
   ): Promise<LicensingTraining> {
-    const training = await this.licensingTrainingRepository.findOne({
-      where: { userId },
-    });
+    // Validate training exists
+    await this.licensingTrainingService.findByUserIdOrFail(userId);
 
-    if (!training) {
-      throw new NotFoundException('Licensing training record not found');
-    }
-
-    Object.assign(training, dto);
-    await this.licensingTrainingRepository.save(training);
+    // Update training record
+    await this.licensingTrainingService.update(userId, dto);
 
     return await this.getLicensingTraining(userId);
   }
 
   // ==================== LICENSING EXAM ====================
 
+  /**
+   * Create or update licensing exam record with attempt tracking
+   *
+   * This operation involves multiple writes that must succeed together:
+   * 1. Validates user exists
+   * 2. Tracks document upload event (if document provided)
+   * 3. Creates exam snapshot + attempt record via LicensingExamService
+   * 4. Updates onboarding steps based on exam result
+   * 5. Updates user onboarding status (if exam passed)
+   *
+   * All operations are wrapped in a transaction for atomicity.
+   */
   async createLicensingExam(
     userId: string,
     dto: CreateLicensingExamDto,
   ): Promise<LicensingExam> {
-    // Check if user exists
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    // Validate user exists before transaction
+    const user = await this.usersService.findByIdOrFail(userId);
 
-    // Validate: if isScheduled is true, examDate is required
-    if (dto.isScheduled && !dto.examDate) {
-      throw new BadRequestException(
-        'Exam date is required when isScheduled is true',
-      );
-    }
-
-    if (dto.resultDocument) {
-      // Track document_upload event
-      await this.analyticsService.trackEvent({
-        userId: user.id,
-        eventType: EventType.DOCUMENT_UPLOADED,
-        role: user.role,
-        affiliateId: user.affiliate_profile_id,
-        metadata: {
-          documentType: 'licensing_exam',
-          s3Key: dto.resultDocument,
-        },
-      });
-    }
-
-    // Get current exam snapshot (if exists) to determine next attempt number
-    const existing = await this.licensingExamRepository.findOne({
-      where: { userId },
-    });
-
-    const nextAttemptNumber = existing ? existing.latestAttemptNumber + 1 : 1;
-
-    // 1. Insert new attempt record (append-only history)
-    const attempt = this.licensingExamAttemptRepository.create({
-      user_id: userId,
-      attempt_number: nextAttemptNumber,
-      exam_date: dto.examDate,
-      result: dto.result,
-      result_screenshot: dto.resultDocument,
-      submitted_at: new Date(),
-    });
-    await this.licensingExamAttemptRepository.save(attempt);
-
-    // 2. Update or create snapshot record (current state)
-    let exam: LicensingExam;
-    if (existing) {
-      // Update existing snapshot
-      existing.isScheduled = dto.isScheduled;
-      existing.examDate = dto.examDate ? new Date(dto.examDate) : undefined;
-      existing.result = dto.result;
-      existing.resultDocument = dto.resultDocument;
-      existing.latestAttemptNumber = nextAttemptNumber;
-      exam = await this.licensingExamRepository.save(existing);
-    } else {
-      // Create new snapshot
-      exam = this.licensingExamRepository.create({
-        userId,
-        isScheduled: dto.isScheduled,
-        examDate: dto.examDate ? new Date(dto.examDate) : undefined,
-        result: dto.result,
-        resultDocument: dto.resultDocument,
-        latestAttemptNumber: nextAttemptNumber,
-      });
-      exam = await this.licensingExamRepository.save(exam);
-    }
-
-    const saved = exam;
-
-    // Step tracking: exam_scheduled → license_uploaded
+    // Pre-calculate dates outside transaction
     const now = new Date();
     const examDate = dto.examDate ? new Date(dto.examDate) : null;
 
-    if (dto.isScheduled && examDate) {
-      if (examDate > now) {
-        // Future exam: Complete exam_scheduled step
-        await this.onboardingStepsService.completeStep(
-          userId,
-          OnboardingStepKey.EXAM_SCHEDULED,
-        );
-      } else if (dto.result === ExamResult.PASSED) {
-        // Exam passed (date in past): Create completed license_uploaded step and enter e&o_uploaded
-        const examScheduledStep = await this.onboardingStepsService.getStep(
-          userId,
-          OnboardingStepKey.EXAM_SCHEDULED,
-        );
-        const enteredAt = examScheduledStep?.completedAt || now;
-
-        await this.onboardingStepsService.createCompletedStep(
-          userId,
-          OnboardingStepKey.LICENSE_UPLOADED,
-          enteredAt,
-          now,
-        );
-        await this.onboardingStepsService.enterStep(
-          userId,
-          OnboardingStepKey.EO_UPLOADED,
-        );
-        await this.updateUserOnboardingStatus(
-          userId,
-          OnboardingStatus.LICENSED,
+    // Wrap all write operations in a transaction
+    return await this.transactionService.runInTransaction(async (manager) => {
+      // Track document_upload event (if document provided)
+      if (dto.resultDocument) {
+        await this.analyticsService.trackEvent(
+          {
+            userId: user.id,
+            eventType: EventType.DOCUMENT_UPLOADED,
+            role: user.role,
+            affiliateId: user.affiliate_profile_id,
+            metadata: {
+              documentType: 'licensing_exam',
+              s3Key: dto.resultDocument,
+            },
+          },
+          manager,
         );
       }
-    }
 
-    return saved;
+      // Create exam snapshot + attempt record via service
+      const exam = await this.licensingExamService.createOrUpdateWithAttempt(
+        userId,
+        dto,
+        manager,
+      );
+
+      // Step tracking: exam_scheduled → license_uploaded
+      if (dto.isScheduled && examDate) {
+        if (examDate > now) {
+          // Future exam: Complete exam_scheduled step
+          await this.onboardingStepsService.completeStep(
+            userId,
+            OnboardingStepKey.EXAM_SCHEDULED,
+            now,
+            manager,
+          );
+        } else if (dto.result === ExamResult.PASSED) {
+          // Exam passed (date in past): Create completed license_uploaded step and enter e&o_uploaded
+          const examScheduledStep = await this.onboardingStepsService.getStep(
+            userId,
+            OnboardingStepKey.EXAM_SCHEDULED,
+          );
+          const enteredAt = examScheduledStep?.completedAt || now;
+
+          await this.onboardingStepsService.createCompletedStep(
+            userId,
+            OnboardingStepKey.LICENSE_UPLOADED,
+            enteredAt,
+            now,
+            manager,
+          );
+          await this.onboardingStepsService.enterStep(
+            userId,
+            OnboardingStepKey.EO_UPLOADED,
+            now,
+            manager,
+          );
+          await this.updateUserOnboardingStatus(
+            userId,
+            OnboardingStatus.LICENSED,
+            manager,
+          );
+        }
+      }
+
+      return exam;
+    });
   }
 
   async getLicensingExam(userId: string): Promise<LicensingExam> {
-    const exam = await this.licensingExamRepository.findOne({
-      where: { userId },
-      relations: ['user'],
-    });
-
-    if (!exam) {
-      throw new NotFoundException('Licensing exam record not found');
-    }
-
-    return exam;
+    return await this.licensingExamService.findByUserIdWithRelationsOrFail(
+      userId,
+    );
   }
 
+  /**
+   * Update licensing exam record
+   *
+   * This operation involves multiple writes that must succeed together:
+   * 1. Update exam record
+   * 2. Update user onboarding status (if exam result changed to passed)
+   *
+   * All operations are wrapped in a transaction for atomicity.
+   */
   async updateLicensingExam(
     userId: string,
     dto: UpdateLicensingExamDto,
   ): Promise<LicensingExam> {
-    const exam = await this.licensingExamRepository.findOne({
-      where: { userId },
+    // Validate exam exists before transaction
+    await this.licensingExamService.findByUserIdOrFail(userId);
+
+    // Wrap all write operations in a transaction
+    await this.transactionService.runInTransaction(async (manager) => {
+      // Update exam record (validation handled by service)
+      await this.licensingExamService.update(userId, dto, manager);
+
+      // If result is 'passed', update user's onboarding status
+      if (dto.result === ExamResult.PASSED) {
+        await this.updateUserOnboardingStatus(
+          userId,
+          OnboardingStatus.LICENSED,
+          manager,
+        );
+      }
     });
-
-    if (!exam) {
-      throw new NotFoundException('Licensing exam record not found');
-    }
-
-    // Validate: if isScheduled is true, examDate is required
-    if (dto.isScheduled && !dto.examDate) {
-      throw new BadRequestException(
-        'Exam date is required when isScheduled is true',
-      );
-    }
-
-    Object.assign(exam, dto);
-    await this.licensingExamRepository.save(exam);
-
-    // If result is 'passed', update user's onboarding status
-    if (dto.result === ExamResult.PASSED) {
-      await this.updateUserOnboardingStatus(userId, OnboardingStatus.LICENSED);
-    }
 
     return await this.getLicensingExam(userId);
   }
@@ -318,12 +288,7 @@ export class OnboardingService {
   async getLicensingExamAttempts(
     userId: string,
   ): Promise<LicensingExamAttempt[]> {
-    const attempts = await this.licensingExamAttemptRepository.find({
-      where: { user_id: userId },
-      order: { attempt_number: 'DESC' },
-    });
-
-    return attempts;
+    return await this.licensingExamService.findAttempts(userId);
   }
 
   // ==================== E&O INSURANCE ====================
@@ -339,10 +304,8 @@ export class OnboardingService {
     }
 
     // Verify user has passed licensing exam
-    const exam = await this.licensingExamRepository.findOne({
-      where: { userId },
-    });
-    if (!exam || exam.result !== ExamResult.PASSED) {
+    const hasPassed = await this.licensingExamService.hasPassed(userId);
+    if (!hasPassed) {
       throw new BadRequestException(
         'You must pass the licensing exam before uploading E&O insurance',
       );
@@ -683,9 +646,10 @@ export class OnboardingService {
       order: { attempt_number: 'DESC' },
       take: 1,
     });
-    const nextAttemptNumber = previousSubmissions.length > 0
-      ? previousSubmissions[0].attempt_number + 1
-      : 1;
+    const nextAttemptNumber =
+      previousSubmissions.length > 0
+        ? previousSubmissions[0].attempt_number + 1
+        : 1;
 
     // Create frozen JSONB snapshot of onboarding state
     const snapshot = await this.createOnboardingSnapshot(userId, isFastTrack);
@@ -1001,7 +965,12 @@ export class OnboardingService {
   private async updateUserOnboardingStatus(
     userId: string,
     status: OnboardingStatus,
+    manager?: EntityManager,
   ): Promise<void> {
+    const userRepo = manager
+      ? manager.getRepository(User)
+      : this.userRepository;
+
     const updateData: Partial<User> = {
       onboardingStatus: status,
     };
@@ -1011,7 +980,7 @@ export class OnboardingService {
       updateData.isLicensed = true;
     }
 
-    await this.userRepository.update(userId, updateData);
+    await userRepo.update(userId, updateData);
 
     console.log(
       `[OnboardingService] Updated user ${userId} onboarding status to ${status}${status === OnboardingStatus.LICENSED ? ' and isLicensed to true' : ''}`,
@@ -1037,9 +1006,7 @@ export class OnboardingService {
       const training = await this.licensingTrainingRepository.findOne({
         where: { userId },
       });
-      const exam = await this.licensingExamRepository.findOne({
-        where: { userId },
-      });
+      const exam = await this.licensingExamService.findByUserId(userId);
       const eAndO = await this.eAndOInsuranceRepository.findOne({
         where: { userId },
       });
@@ -1151,13 +1118,8 @@ export class OnboardingService {
       }
 
       // Check licensing exam
-      const exam = await this.licensingExamRepository.findOne({
-        where: { userId },
-      });
-      const examAttempts = await this.licensingExamAttemptRepository.find({
-        where: { user_id: userId },
-        order: { attempt_number: 'DESC' },
-      });
+      const exam = await this.licensingExamService.findByUserId(userId);
+      const examAttempts = await this.licensingExamService.findAttempts(userId);
 
       if (exam && exam.result === ExamResult.PASSED) {
         completedSteps.push('licensing_exam');

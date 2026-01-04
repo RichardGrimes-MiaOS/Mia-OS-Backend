@@ -15,8 +15,11 @@ import { User } from '../users/entities/user.entity';
 import { EmailModule } from '../email/email.module';
 import { S3Service } from './services/s3.service';
 import { OnboardingStepsService } from './services/onboarding-steps.service';
+import { LicensingTrainingService } from './services/licensing-training.service';
+import { LicensingExamService } from './services/licensing-exam.service';
 import { AffiliatesModule } from '../affiliates/affiliates.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -35,9 +38,16 @@ import { AnalyticsModule } from '../analytics/analytics.module';
     EmailModule,
     AffiliatesModule,
     AnalyticsModule,
+    UsersModule,
   ],
   controllers: [OnboardingController],
-  providers: [OnboardingService, S3Service, OnboardingStepsService],
+  providers: [
+    OnboardingService,
+    S3Service,
+    OnboardingStepsService,
+    LicensingTrainingService,
+    LicensingExamService,
+  ],
   exports: [OnboardingService, OnboardingStepsService],
 })
 export class OnboardingModule {}

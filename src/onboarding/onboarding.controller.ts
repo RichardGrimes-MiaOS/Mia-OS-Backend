@@ -36,7 +36,7 @@ export class OnboardingController {
   ) {}
 
   // ==================== S3 PRE-SIGNED URLs ====================
-
+  
   @Post('upload/presigned-url')
   @HttpCode(HttpStatus.OK)
   async getPresignedUrl(
