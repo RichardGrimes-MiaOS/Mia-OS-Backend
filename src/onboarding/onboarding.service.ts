@@ -661,7 +661,7 @@ export class OnboardingService {
     );
 
     // Create activation request
-    const richardEmail = process.env.RICHARD_EMAIL!;
+    const richardEmail = process.env.FOUNDER_EMAIL!;
 
     const activationRequest = this.activationRequestRepository.create({
       userId: user.id,
