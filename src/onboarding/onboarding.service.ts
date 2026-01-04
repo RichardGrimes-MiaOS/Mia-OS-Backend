@@ -38,6 +38,7 @@ import { S3Service } from './services/s3.service';
 import { OnboardingStepsService } from './services/onboarding-steps.service';
 import { LicensingTrainingService } from './services/licensing-training.service';
 import { LicensingExamService } from './services/licensing-exam.service';
+import { EAndOInsuranceService } from './services/e-and-o-insurance.service';
 import { OnboardingStepKey } from './entities/user-onboarding-step.entity';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { EventType } from '../analytics/entities/user-event.entity';
@@ -48,8 +49,6 @@ export class OnboardingService {
   constructor(
     @InjectRepository(LicensingTraining)
     private readonly licensingTrainingRepository: Repository<LicensingTraining>,
-    @InjectRepository(EAndOInsurance)
-    private readonly eAndOInsuranceRepository: Repository<EAndOInsurance>,
     @InjectRepository(ActivationRequest)
     private readonly activationRequestRepository: Repository<ActivationRequest>,
     @InjectRepository(LicensedAgentIntake)
@@ -69,6 +68,7 @@ export class OnboardingService {
     private readonly transactionService: TransactionService,
     private readonly licensingTrainingService: LicensingTrainingService,
     private readonly licensingExamService: LicensingExamService,
+    private readonly eAndOInsuranceService: EAndOInsuranceService,
     private readonly usersService: UsersService,
   ) {}
 
@@ -293,17 +293,26 @@ export class OnboardingService {
 
   // ==================== E&O INSURANCE ====================
 
+  /**
+   * Create E&O insurance record for a user
+   *
+   * This operation involves multiple writes that must succeed together:
+   * 1. Validates user exists and passed licensing exam
+   * 2. Creates E&O insurance record via service
+   * 3. Tracks document upload event
+   * 4. Updates onboarding steps
+   * 5. Updates user onboarding status to pending_activation
+   * 6. Creates activation request and notifies admin
+   *
+   * All database operations are wrapped in a transaction for atomicity.
+   */
   async createEAndOInsurance(
     userId: string,
     dto: CreateEAndOInsuranceDto,
   ): Promise<EAndOInsurance> {
-    // Check if user exists
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    // Validate user exists and passed licensing exam before transaction
+    const user = await this.usersService.findByIdOrFail(userId);
 
-    // Verify user has passed licensing exam
     const hasPassed = await this.licensingExamService.hasPassed(userId);
     if (!hasPassed) {
       throw new BadRequestException(
@@ -311,75 +320,66 @@ export class OnboardingService {
       );
     }
 
-    // Verify user has passed licensing exam
-    const existingInsurance = await this.eAndOInsuranceRepository.findOne({
-      where: { userId },
-    });
-    if (existingInsurance) {
-      throw new BadRequestException(
-        'E&O insurance already exist for this user',
-      );
-    }
+    // Wrap all write operations in a transaction
+    const insurance = await this.transactionService.runInTransaction(
+      async (manager) => {
+        // Create E&O insurance record via service
+        const insurance = await this.eAndOInsuranceService.create(
+          userId,
+          dto,
+          manager,
+        );
 
-    const insurance = this.eAndOInsuranceRepository.create({
-      userId,
-      ...dto,
-    });
+        // Track document_upload event
+        if (insurance.documentPath) {
+          await this.analyticsService.trackEvent(
+            {
+              userId: user.id,
+              eventType: EventType.DOCUMENT_UPLOADED,
+              role: user.role,
+              affiliateId: user.affiliate_profile_id,
+              metadata: {
+                documentType: 'e_and_o_insurance',
+                s3Key: dto.documentPath,
+              },
+            },
+            manager,
+          );
+        }
 
-    const saved = await this.eAndOInsuranceRepository.save(insurance);
+        // Step tracking: e&o_uploaded → activation_unlocked
+        await this.onboardingStepsService.completeAndProgress(
+          userId,
+          OnboardingStepKey.EO_UPLOADED,
+          OnboardingStepKey.ACTIVATION_UNLOCKED,
+          manager,
+        );
 
-    if (saved.documentPath) {
-      // Track document_upload event
-      await this.analyticsService.trackEvent({
-        userId: user.id,
-        eventType: EventType.DOCUMENT_UPLOADED,
-        role: user.role,
-        affiliateId: user.affiliate_profile_id,
-        metadata: {
-          documentType: 'e_and_o_insurance',
-          s3Key: dto.documentPath,
-        },
-      });
-    }
+        // Update user onboarding status to pending_activation
+        await this.updateUserOnboardingStatus(
+          userId,
+          OnboardingStatus.PENDING_ACTIVATION,
+          manager,
+        );
 
-    // Step tracking: e&o_uploaded → activation_unlocked
-    await this.onboardingStepsService.completeAndProgress(
-      userId,
-      OnboardingStepKey.EO_UPLOADED,
-      OnboardingStepKey.ACTIVATION_UNLOCKED,
+        return insurance;
+      },
     );
 
-    // Update user onboarding status to pending_activation
-    await this.updateUserOnboardingStatus(
-      userId,
-      OnboardingStatus.PENDING_ACTIVATION,
-    );
+    // Note: createActivationRequestAndNotify is called OUTSIDE transaction
+    // because it involves external email service (fire-and-forget pattern)
+    // This is intentional - we don't want email failures to rollback the transaction
+    await this.createActivationRequestAndNotify(user);
 
-    // Create activation request and send email to Richard
-    await this.createActivationRequestAndNotify(userId);
-
-    return saved;
+    return insurance;
   }
 
   async listEAndOInsurance(userId: string): Promise<EAndOInsurance[]> {
-    return await this.eAndOInsuranceRepository.find({
-      where: { userId },
-      relations: ['user'],
-      order: { createdAt: 'DESC' },
-    });
+    return await this.eAndOInsuranceService.findAllByUserId(userId);
   }
 
   async getEAndOInsuranceById(id: string): Promise<EAndOInsurance> {
-    const insurance = await this.eAndOInsuranceRepository.findOne({
-      where: { id },
-      relations: ['user'],
-    });
-
-    if (!insurance) {
-      throw new NotFoundException('E&O insurance record not found');
-    }
-
-    return insurance;
+    return await this.eAndOInsuranceService.findByIdOrFail(id);
   }
 
   // ==================== LICENSED AGENT INTAKE (Fast-Track Path) ====================
@@ -449,15 +449,13 @@ export class OnboardingService {
 
     const savedIntake = await this.licensedAgentIntakeRepository.save(intake);
 
-    // Auto-create E&O insurance record from intake data
-    const eAndO = this.eAndOInsuranceRepository.create({
-      userId,
+    // Auto-create E&O insurance record from intake data (using service without validation)
+    await this.eAndOInsuranceService.createWithoutValidation(userId, {
       documentPath: dto.eAndODocumentPath,
       carrierName: dto.eAndOCarrierName,
       policyNumber: dto.eAndOPolicyNumber,
-      expirationDate: new Date(dto.eAndOExpirationDate),
+      expirationDate: dto.eAndOExpirationDate,
     });
-    await this.eAndOInsuranceRepository.save(eAndO);
 
     if (dto.eAndODocumentPath) {
       // Track document_upload event
@@ -487,7 +485,7 @@ export class OnboardingService {
     );
 
     // Create activation request and send email to Richard (fast-track path)
-    await this.createActivationRequestAndNotify(userId, true);
+    await this.createActivationRequestAndNotify(user, true);
 
     console.log(
       `[OnboardingService] Successfully created licensed agent intake for user ${userId} with ${licenses.length} licenses`,
@@ -620,29 +618,24 @@ export class OnboardingService {
   // ==================== ACTIVATION REQUEST ====================
 
   private async createActivationRequestAndNotify(
-    userId: string,
+    user: User,
     isFastTrack: boolean = false,
   ): Promise<void> {
     // Check if activation request already exists
     const existing = await this.activationRequestRepository.findOne({
-      where: { userId },
+      where: { userId: user.id },
     });
 
     if (existing) {
       console.log(
-        `[OnboardingService] Activation request already exists for user ${userId}`,
+        `[OnboardingService] Activation request already exists for user ${user.id}`,
       );
       return;
     }
 
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
     // Determine next attempt number
     const previousSubmissions = await this.reviewSubmissionRepository.find({
-      where: { user_id: userId },
+      where: { user_id: user.id },
       order: { attempt_number: 'DESC' },
       take: 1,
     });
@@ -652,11 +645,11 @@ export class OnboardingService {
         : 1;
 
     // Create frozen JSONB snapshot of onboarding state
-    const snapshot = await this.createOnboardingSnapshot(userId, isFastTrack);
+    const snapshot = await this.createOnboardingSnapshot(user.id, isFastTrack);
 
     // Create review submission record (append-only history)
     const reviewSubmission = this.reviewSubmissionRepository.create({
-      user_id: userId,
+      user_id: user.id,
       attempt_number: nextAttemptNumber,
       snapshot,
       status: OnboardingReviewStatus.PENDING,
@@ -664,15 +657,14 @@ export class OnboardingService {
     await this.reviewSubmissionRepository.save(reviewSubmission);
 
     console.log(
-      `[OnboardingService] Created review submission attempt #${nextAttemptNumber} for user ${userId}`,
+      `[OnboardingService] Created review submission attempt #${nextAttemptNumber} for user ${user.id}`,
     );
 
     // Create activation request
-    const richardEmail =
-      process.env.RICHARD_EMAIL || 'richard@makeincomeanywhere.com';
+    const richardEmail = process.env.RICHARD_EMAIL!;
 
     const activationRequest = this.activationRequestRepository.create({
-      userId,
+      userId: user.id,
       emailSentAt: new Date(),
       emailSentTo: richardEmail,
     });
@@ -683,7 +675,7 @@ export class OnboardingService {
     this.sendActivationEmailToRichard(user, richardEmail, isFastTrack).catch(
       (error) => {
         console.error(
-          `[OnboardingService] Failed to send activation email for user ${userId}:`,
+          `[OnboardingService] Failed to send activation email for user ${user.id}:`,
           error,
         );
       },
@@ -1007,9 +999,7 @@ export class OnboardingService {
         where: { userId },
       });
       const exam = await this.licensingExamService.findByUserId(userId);
-      const eAndO = await this.eAndOInsuranceRepository.findOne({
-        where: { userId },
-      });
+      const eAndO = await this.eAndOInsuranceService.findByUserId(userId);
 
       if (training) snapshot.licensing_training = training;
       if (exam) snapshot.licensing_exam = exam;
@@ -1023,9 +1013,7 @@ export class OnboardingService {
       const licenses = await this.licenseRepository.find({
         where: { userId },
       });
-      const eAndO = await this.eAndOInsuranceRepository.findOne({
-        where: { userId },
-      });
+      const eAndO = await this.eAndOInsuranceService.findByUserId(userId);
 
       if (intake) snapshot.licensed_agent_intake = intake;
       if (licenses.length) snapshot.licenses = licenses;
@@ -1082,10 +1070,8 @@ export class OnboardingService {
       }
 
       // Check E&O insurance (common to both paths)
-      const eoInsurances = await this.eAndOInsuranceRepository.find({
-        where: { userId },
-        order: { createdAt: 'DESC' },
-      });
+      const eoInsurances =
+        await this.eAndOInsuranceService.findAllByUserId(userId);
       if (eoInsurances.length > 0) {
         completedSteps.push('e_and_o_insurance');
         const latest = eoInsurances[0];
@@ -1139,10 +1125,8 @@ export class OnboardingService {
       }
 
       // Check E&O insurance (common to both paths)
-      const eoInsurances = await this.eAndOInsuranceRepository.find({
-        where: { userId },
-        order: { createdAt: 'DESC' },
-      });
+      const eoInsurances =
+        await this.eAndOInsuranceService.findAllByUserId(userId);
       if (eoInsurances.length > 0) {
         completedSteps.push('e_and_o_insurance');
         const latest = eoInsurances[0];

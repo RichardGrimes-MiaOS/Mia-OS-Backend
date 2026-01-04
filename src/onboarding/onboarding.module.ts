@@ -17,6 +17,7 @@ import { S3Service } from './services/s3.service';
 import { OnboardingStepsService } from './services/onboarding-steps.service';
 import { LicensingTrainingService } from './services/licensing-training.service';
 import { LicensingExamService } from './services/licensing-exam.service';
+import { EAndOInsuranceService } from './services/e-and-o-insurance.service';
 import { AffiliatesModule } from '../affiliates/affiliates.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { UsersModule } from '../users/users.module';
@@ -47,6 +48,7 @@ import { UsersModule } from '../users/users.module';
     OnboardingStepsService,
     LicensingTrainingService,
     LicensingExamService,
+    EAndOInsuranceService,
   ],
   exports: [OnboardingService, OnboardingStepsService],
 })
