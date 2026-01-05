@@ -75,6 +75,54 @@ export class UsersService {
   }
 
   /**
+   * Update user activation data (onboarding completion)
+   *
+   * @param userId - User ID to update
+   * @param activatedAt - Activation timestamp
+   * @param timeToActivation - Time to activation in seconds (optional)
+   * @param manager - Optional EntityManager for transaction support
+   */
+  async updateActivationData(
+    userId: string,
+    activatedAt: Date,
+    timeToActivation: number | null,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(User) : this.userRepository;
+    const updateData: any = {
+      activated_at: activatedAt,
+    };
+    if (timeToActivation !== null) {
+      updateData.time_to_activation = timeToActivation;
+    }
+    await repo.update(userId, updateData);
+  }
+
+  /**
+   * Clear user activation data (when rejecting activation)
+   * Uses raw SQL to set NULL values which TypeORM update() doesn't support well
+   *
+   * @param userId - User ID to update
+   * @param manager - Optional EntityManager for transaction support
+   */
+  async clearActivationData(
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<void> {
+    if (manager) {
+      await manager.query(
+        `UPDATE users SET activated_at = NULL, time_to_activation = NULL WHERE id = $1`,
+        [userId],
+      );
+    } else {
+      await this.userRepository.query(
+        `UPDATE users SET activated_at = NULL, time_to_activation = NULL WHERE id = $1`,
+        [userId],
+      );
+    }
+  }
+
+  /**
    * Find user by email
    * Checks both database and Cognito to ensure user exists in both systems
    *

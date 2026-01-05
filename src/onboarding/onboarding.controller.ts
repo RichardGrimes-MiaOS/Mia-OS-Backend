@@ -36,7 +36,7 @@ export class OnboardingController {
   ) {}
 
   // ==================== S3 PRE-SIGNED URLs ====================
-  
+
   @Post('upload/presigned-url')
   @HttpCode(HttpStatus.OK)
   async getPresignedUrl(
@@ -140,10 +140,7 @@ export class OnboardingController {
     @CurrentUser() user: User,
     @Body() dto: CreateLicensedAgentIntakeDto,
   ) {
-    return await this.onboardingService.createLicensedAgentIntake(
-      user.id,
-      dto,
-    );
+    return await this.onboardingService.createLicensedAgentIntake(user.id, dto);
   }
 
   @Get('licensed-intake')
@@ -192,7 +189,7 @@ export class OnboardingController {
     @CurrentUser() admin: User,
     @Body() dto: ActivateUserDto,
   ) {
-    return await this.onboardingService.activateUser(userId, admin.id, dto);
+    return await this.onboardingService.activateUser(userId, admin, dto);
   }
 
   @Get('review-submissions')

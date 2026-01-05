@@ -706,21 +706,22 @@ export class OnboardingService {
 
   /**
    * Admin reviews activation request (approve or reject)
-   * - APPROVE: Marks onboarding as complete, sends welcome email
-   * - REJECT: Sends user back to in_progress, sends rejection email with notes
+   *
+   * This operation involves multiple writes that must succeed together:
+   * - APPROVE: Updates user, activation request, review submission, steps, analytics
+   * - REJECT: Updates user, activation request, review submission, analytics
+   *
+   * All database operations are wrapped in a transaction for atomicity.
+   * Email notifications are sent OUTSIDE transaction (fire-and-forget).
    */
   async activateUser(
     userId: string,
-    adminId: string,
+    admin: User,
     dto: ActivateUserDto,
   ): Promise<{ user: User; activationRequest: ActivationRequest }> {
-    // Check if user exists
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    // Validate user exists and is in correct status before transaction
+    const user = await this.usersService.findByIdOrFail(userId);
 
-    // Verify user is in pending_activation status
     if (user.onboardingStatus !== OnboardingStatus.PENDING_ACTIVATION) {
       throw new BadRequestException(
         `User onboarding status must be 'pending_activation' to review. Current status: ${user.onboardingStatus}`,
@@ -748,122 +749,140 @@ export class OnboardingService {
       order: { attempt_number: 'DESC' },
     });
 
-    // Handle APPROVAL
-    if (dto.status === ActivationStatus.APPROVED) {
-      // Calculate time to activation (seconds from approved_at to activation)
-      const approvedAt = user.approved_at;
-      const activatedAt = new Date();
-      const timeToActivation = approvedAt
-        ? Math.floor((activatedAt.getTime() - approvedAt.getTime()) / 1000)
-        : null;
+    // Pre-calculate timestamps
+    const actionAt = new Date();
 
-      // Update user: mark onboarding complete and set activation timestamp
-      const updateData: any = {
-        onboardingStatus: OnboardingStatus.ONBOARDED,
-        activated_at: activatedAt,
-      };
-      if (timeToActivation !== null) {
-        updateData.time_to_activation = timeToActivation;
-      }
-      await this.userRepository.update(userId, updateData);
-
-      // Update activation request
-      await this.activationRequestRepository.update(activationRequest.id, {
-        status: ActivationStatus.APPROVED,
-        approvedBy: adminId,
-        approvedAt: activatedAt,
-        notes: dto.notes,
-      });
-
-      // Update review submission with approval details
-      if (reviewSubmission) {
-        await this.reviewSubmissionRepository.update(reviewSubmission.id, {
-          status: OnboardingReviewStatus.APPROVED,
-          reviewed_by: adminId,
-          reviewed_at: activatedAt,
-          admin_notes: dto.notes,
-        });
-      }
-
-      console.log(
-        `[OnboardingService] User ${userId} APPROVED by admin ${adminId}. Onboarding complete.`,
+    // Wrap all database writes in a transaction
+    await this.transactionService.runInTransaction(async (manager) => {
+      const activationRequestRepo = manager.getRepository(ActivationRequest);
+      const reviewSubmissionRepo = manager.getRepository(
+        OnboardingReviewSubmission,
       );
 
-      // Step tracking: Complete activation_unlocked step (end of funnel)
-      await this.onboardingStepsService.completeStep(
-        userId,
-        OnboardingStepKey.ACTIVATION_UNLOCKED,
-      );
+      // Handle APPROVAL
+      if (dto.status === ActivationStatus.APPROVED) {
+        // Calculate time to activation (seconds from approved_at to activation)
+        const timeToActivation = user.approved_at
+          ? Math.floor((actionAt.getTime() - user.approved_at.getTime()) / 1000)
+          : null;
 
-      // Track admin approval event
-      const admin = await this.userRepository.findOne({
-        where: { id: adminId },
-      });
-      await this.analyticsService.trackEvent({
-        userId: adminId,
-        eventType: EventType.ADMIN_APPROVED,
-        role: admin?.role,
-        metadata: {
-          targetUserId: userId,
-          targetUserEmail: user.email,
+        // Update user: mark onboarding complete and set activation timestamp
+        await this.updateUserOnboardingStatus(
+          userId,
+          OnboardingStatus.ONBOARDED,
+          manager,
+        );
+        await this.usersService.updateActivationData(
+          userId,
+          actionAt,
+          timeToActivation,
+          manager,
+        );
+
+        // Update activation request
+        await activationRequestRepo.update(activationRequest.id, {
+          status: ActivationStatus.APPROVED,
+          approvedBy: admin.id,
+          approvedAt: actionAt,
           notes: dto.notes,
-        },
-      });
+        });
 
-      // Send onboarded confirmation email
+        // Update review submission with approval details
+        if (reviewSubmission) {
+          await reviewSubmissionRepo.update(reviewSubmission.id, {
+            status: OnboardingReviewStatus.APPROVED,
+            reviewed_by: admin.id,
+            reviewed_at: actionAt,
+            admin_notes: dto.notes,
+          });
+        }
+
+        // Step tracking: Complete activation_unlocked step (end of funnel)
+        await this.onboardingStepsService.completeStep(
+          userId,
+          OnboardingStepKey.ACTIVATION_UNLOCKED,
+          actionAt,
+          manager,
+        );
+
+        // Track admin approval event
+        await this.analyticsService.trackEvent(
+          {
+            userId: admin.id,
+            eventType: EventType.ADMIN_APPROVED,
+            role: admin.role,
+            metadata: {
+              targetUserId: userId,
+              targetUserEmail: user.email,
+              notes: dto.notes,
+            },
+          },
+          manager,
+        );
+
+        console.log(
+          `[OnboardingService] User ${userId} APPROVED by admin ${admin.id}. Onboarding complete.`,
+        );
+      }
+      // Handle REJECTION
+      else if (dto.status === ActivationStatus.REJECTED) {
+        // Update user: send back to in_progress, clear activation timestamps
+        await this.updateUserOnboardingStatus(
+          userId,
+          OnboardingStatus.IN_PROGRESS,
+          manager,
+        );
+        await this.usersService.clearActivationData(userId, manager);
+
+        // Update activation request
+        await activationRequestRepo.update(activationRequest.id, {
+          status: ActivationStatus.REJECTED,
+          approvedBy: admin.id,
+          approvedAt: actionAt,
+          notes: dto.notes,
+        });
+
+        // Update review submission with rejection details
+        if (reviewSubmission) {
+          await reviewSubmissionRepo.update(reviewSubmission.id, {
+            status: OnboardingReviewStatus.REJECTED,
+            reviewed_by: admin.id,
+            reviewed_at: actionAt,
+            admin_notes: dto.notes,
+          });
+        }
+
+        // Track admin rejection event
+        await this.analyticsService.trackEvent(
+          {
+            userId: admin.id,
+            eventType: EventType.ADMIN_REJECTED,
+            role: admin.role,
+            metadata: {
+              targetUserId: userId,
+              targetUserEmail: user.email,
+              notes: dto.notes,
+              attemptNumber: reviewSubmission?.attempt_number,
+            },
+          },
+          manager,
+        );
+
+        console.log(
+          `[OnboardingService] User ${userId} REJECTED by admin ${admin.id}. Sent back to in_progress. Rejection count: ${reviewSubmission?.attempt_number || 'unknown'}`,
+        );
+      }
+    });
+
+    // Send emails OUTSIDE transaction (fire-and-forget pattern)
+    // We don't want email failures to rollback database changes
+    if (dto.status === ActivationStatus.APPROVED) {
       await this.emailService.sendOnboardedEmail({
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
       });
-    }
-    // Handle REJECTION
-    else if (dto.status === ActivationStatus.REJECTED) {
-      // Update user: send back to in_progress, clear activation timestamp using raw SQL
-      await this.userRepository.query(
-        `UPDATE users SET onboarding_status = $1, activated_at = NULL, time_to_activation = NULL WHERE id = $2`,
-        [OnboardingStatus.IN_PROGRESS, userId],
-      );
-
-      // Update activation request
-      await this.activationRequestRepository.update(activationRequest.id, {
-        status: ActivationStatus.REJECTED,
-        approvedBy: adminId,
-        approvedAt: new Date(),
-        notes: dto.notes,
-      });
-
-      // Update review submission with rejection details
-      if (reviewSubmission) {
-        await this.reviewSubmissionRepository.update(reviewSubmission.id, {
-          status: OnboardingReviewStatus.REJECTED,
-          reviewed_by: adminId,
-          reviewed_at: new Date(),
-          admin_notes: dto.notes,
-        });
-      }
-
-      console.log(
-        `[OnboardingService] User ${userId} REJECTED by admin ${adminId}. Sent back to in_progress. Rejection count: ${reviewSubmission?.attempt_number || 'unknown'}`,
-      );
-
-      // Track admin rejection event
-      const admin = await this.userRepository.findOne({
-        where: { id: adminId },
-      });
-      await this.analyticsService.trackEvent({
-        userId: adminId,
-        eventType: EventType.ADMIN_REJECTED,
-        role: admin?.role,
-        metadata: {
-          targetUserId: userId,
-          targetUserEmail: user.email,
-          notes: dto.notes,
-          attemptNumber: reviewSubmission?.attempt_number,
-        },
-      });
-
-      // Send rejection email with admin notes
+    } else if (dto.status === ActivationStatus.REJECTED) {
       await this.emailService.sendActivationRejectedEmail({
         email: user.email,
         firstName: user.firstName,
@@ -873,9 +892,7 @@ export class OnboardingService {
     }
 
     // Reload user and activation request with updated data
-    const updatedUser = await this.userRepository.findOne({
-      where: { id: userId },
-    });
+    const updatedUser = await this.usersService.findByIdOrFail(userId);
     const updatedActivationRequest =
       await this.activationRequestRepository.findOne({
         where: { id: activationRequest.id },
@@ -883,7 +900,7 @@ export class OnboardingService {
       });
 
     return {
-      user: updatedUser!,
+      user: updatedUser,
       activationRequest: updatedActivationRequest!,
     };
   }
