@@ -1,5 +1,5 @@
 import { Controller, Get, UseGuards, Req, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BestNextActionResolver } from './services/best-next-action-resolver.service';
 import {
@@ -14,6 +14,7 @@ import {
  * Returns a single, personalized action recommendation for the authenticated user.
  */
 @ApiTags('flowbar')
+@ApiBearerAuth()
 @Controller('flowbar')
 @UseGuards(JwtAuthGuard)
 export class FlowbarController {

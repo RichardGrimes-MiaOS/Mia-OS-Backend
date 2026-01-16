@@ -41,7 +41,10 @@ async function bootstrap() {
     .addTag('onboarding', 'Agent onboarding (licensing, exam, E&O insurance, fast-track intake, affiliate, admin activation)')
     .addTag('contacts', 'CRM contact management (create, update, delete, filter, pipeline stages)')
     .addTag('tasks', 'Task management (create, update, delete, filter, overdue tracking)')
-    .addTag('affiliates', 'Affiliate tracking')
+    .addTag('cadence', 'Cadence tracking (rhythm state, daily logs, history, density-based pattern analysis)')
+    .addTag('flowbar', 'Best Next Action (BNA) recommendations (personalized guidance based on user state)')
+    .addTag('daily-plan', 'Daily plan progress (required actions, completed actions, progress percentage)')
+    .addTag('affiliates', 'Affiliate management (profile CRUD, photo upload, visit tracking, public lookup)')
     .addTag('admin', 'Admin operations')
     .build();
 
