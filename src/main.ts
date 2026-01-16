@@ -44,6 +44,7 @@ async function bootstrap() {
     .addTag('cadence', 'Cadence tracking (rhythm state, daily logs, history, density-based pattern analysis)')
     .addTag('flowbar', 'Best Next Action (BNA) recommendations (personalized guidance based on user state)')
     .addTag('daily-plan', 'Daily plan progress (required actions, completed actions, progress percentage)')
+    .addTag('analytics', 'Event tracking & analytics (user events, activity tracking, admin metrics)')
     .addTag('affiliates', 'Affiliate management (profile CRUD, photo upload, visit tracking, public lookup)')
     .addTag('admin', 'Admin operations')
     .build();
