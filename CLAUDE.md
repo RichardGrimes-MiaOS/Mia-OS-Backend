@@ -90,15 +90,130 @@ src/
 - **Guards**: Use `JwtAuthGuard` + `RolesGuard` for protected endpoints
 - **Decorators**: `@CurrentUser()` for extracting authenticated user from request
 - **DTOs**: class-validator decorators for request validation
-- **API Documentation**: Use `@ApiProperty()` decorator from `@nestjs/swagger` on all DTO properties for automatic OpenAPI/Swagger documentation generation
+
+### Swagger/OpenAPI Documentation
+
+All API endpoints MUST be documented using Swagger decorators. This ensures automatic API documentation generation at `/api/docs`.
+
+#### Required Decorators for Controllers
+
+1. **@ApiTags()** - Group endpoints by module (use lowercase tag name)
+   ```typescript
+   @ApiTags('auth')
+   @Controller('auth')
+   export class AuthController {}
+   ```
+
+2. **@ApiOperation()** - Describe endpoint purpose
+   ```typescript
+   @ApiOperation({
+     summary: 'User login',
+     description: 'Authenticate user with email and password. Returns JWT tokens or NEW_PASSWORD_REQUIRED challenge.'
+   })
+   ```
+
+3. **@ApiResponse()** - Document all possible HTTP responses
+   ```typescript
+   @ApiResponse({ status: 200, description: 'Login successful' })
+   @ApiResponse({ status: 401, description: 'Unauthorized - Invalid credentials' })
+   @ApiResponse({ status: 500, description: 'Internal Server Error' })
+   ```
+
+4. **@ApiBearerAuth()** - Mark protected endpoints requiring JWT
+   ```typescript
+   @UseGuards(JwtAuthGuard)
+   @ApiBearerAuth()
+   @Get('profile')
+   ```
+
+5. **@ApiParam()** - Document path parameters
+   ```typescript
+   @ApiParam({
+     name: 'id',
+     description: 'User UUID',
+     type: 'string',
+     format: 'uuid'
+   })
+   ```
+
+6. **@ApiQuery()** - Document query parameters
+   ```typescript
+   @ApiQuery({
+     name: 'status',
+     required: false,
+     enum: ApplicantStatus,
+     description: 'Filter by status'
+   })
+   ```
+
+7. **@ApiBody()** - Document request body (when not using DTO)
+   ```typescript
+   @ApiBody({
+     schema: {
+       type: 'object',
+       properties: { role: { type: 'string', enum: Object.values(UserRole) } }
+     }
+   })
+   ```
+
+#### Required Decorators for DTOs
+
+1. **@ApiProperty()** - Document required fields
+   ```typescript
+   @ApiProperty({
+     description: 'User email address',
+     example: 'user@example.com',
+     maxLength: 255
+   })
+   @IsEmail()
+   email: string;
+   ```
+
+2. **@ApiPropertyOptional()** - Document optional fields (do NOT use `@ApiProperty({ required: false })`)
+   ```typescript
+   @ApiPropertyOptional({
+     description: 'Phone number',
+     example: '+1-555-123-4567'
+   })
+   @IsOptional()
+   phone?: string;
+   ```
+
+3. **Enum Documentation** - Always include enum values
+   ```typescript
+   @ApiProperty({
+     enum: UserRole,
+     description: 'User role',
+     example: UserRole.AGENT
+   })
+   @IsEnum(UserRole)
+   role: UserRole;
+   ```
+
+#### Best Practices
+
+- **Tag Names**: Use lowercase for consistency (`'auth'`, `'applicants'`, not `'Auth'`, `'Applicants'`)
+- **Error Messages**: Document actual error messages from service layer, not generic descriptions
+- **Examples**: Provide realistic examples in DTOs to help API consumers
+- **Optional Fields**: Remove `example` from `@ApiPropertyOptional()` to exclude from default request body
+- **PartialType**: Use `PartialType` from `@nestjs/swagger` (not `@nestjs/mapped-types`) for DTOs that extend other DTOs
+- **Service Review**: Always read the service implementation to document accurate error responses (401, 409, 500, etc.)
+- **Tag Descriptions**: Add descriptive tag definitions in `main.ts`:
   ```typescript
-  // Example: Documenting a DTO property
-  @ApiProperty({
-    enum: ActionCategory,
-    description: 'Action category for precedence ordering'
-  })
-  category: ActionCategory;
+  .addTag('auth', 'Authentication & authorization (login, tokens, password management)')
   ```
+
+#### Documentation Checklist
+
+Before considering an API endpoint complete:
+- [ ] Controller has `@ApiTags()`
+- [ ] All endpoints have `@ApiOperation()`
+- [ ] All endpoints document all possible `@ApiResponse()` codes
+- [ ] Protected endpoints have `@ApiBearerAuth()`
+- [ ] Path/query parameters documented with `@ApiParam()` / `@ApiQuery()`
+- [ ] All DTO fields have `@ApiProperty()` or `@ApiPropertyOptional()`
+- [ ] Error responses match actual service implementation
+- [ ] Tag is registered in `main.ts` with description
 
 ### Code Style
 
@@ -245,6 +360,4 @@ pnpm create-super-admin    # Create initial super admin user
 
 - Use `@CurrentUser()` decorator to access authenticated user in controllers
 - Leverage TypeORM QueryBuilder for complex queries
-- Test with Cognito local user pools or mock JWT tokens
-- Check AWS credentials are configured for S3/SES operations
-- Run `create-super-admin` script before first login
+
