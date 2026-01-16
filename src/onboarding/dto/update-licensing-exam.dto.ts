@@ -1,4 +1,4 @@
-import { PartialType } from '@nestjs/mapped-types';
+import { PartialType } from '@nestjs/swagger';
 import { CreateLicensingExamDto } from './create-licensing-exam.dto';
 
 export class UpdateLicensingExamDto extends PartialType(

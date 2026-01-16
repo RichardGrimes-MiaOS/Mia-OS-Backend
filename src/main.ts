@@ -34,10 +34,11 @@ async function bootstrap() {
     .setDescription('The MIA CRM Backend API documentation')
     .setVersion('1.0')
     .addBearerAuth() // Add JWT authentication support
+    .addTag('health', 'Health check endpoint')
     .addTag('applicants', 'Applicant management (pre-signup)')
     .addTag('auth', 'Authentication & authorization (login, tokens, password management, user creation)')
     .addTag('users', 'User management (list users, agent profiles)')
-    .addTag('onboarding', 'Agent onboarding workflows')
+    .addTag('onboarding', 'Agent onboarding (licensing, exam, E&O insurance, fast-track intake, affiliate, admin activation)')
     .addTag('contacts', 'CRM contact management (create, update, delete, filter, pipeline stages)')
     .addTag('tasks', 'Task management (create, update, delete, filter, overdue tracking)')
     .addTag('affiliates', 'Affiliate tracking')
