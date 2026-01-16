@@ -36,10 +36,10 @@ async function bootstrap() {
     .addBearerAuth() // Add JWT authentication support
     .addTag('applicants', 'Applicant management (pre-signup)')
     .addTag('auth', 'Authentication & authorization (login, tokens, password management, user creation)')
-    .addTag('users', 'User management')
+    .addTag('users', 'User management (list users, agent profiles)')
     .addTag('onboarding', 'Agent onboarding workflows')
-    .addTag('contacts', 'CRM contact management')
-    .addTag('tasks', 'Task management')
+    .addTag('contacts', 'CRM contact management (create, update, delete, filter, pipeline stages)')
+    .addTag('tasks', 'Task management (create, update, delete, filter, overdue tracking)')
     .addTag('affiliates', 'Affiliate tracking')
     .addTag('admin', 'Admin operations')
     .build();
