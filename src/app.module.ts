@@ -85,7 +85,10 @@ import { CommonModule } from './common/common.module';
         ActionRecommendation,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
-      logging: process.env.NODE_ENV === 'development',
+      logging:
+        process.env.NODE_ENV === 'development'
+          ? ['error', 'warn', 'info', 'log']
+          : false,
       // ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
       ssl: process.env.DB_HOST ? { rejectUnauthorized: false } : false,
     }),

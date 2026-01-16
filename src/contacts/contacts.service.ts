@@ -13,6 +13,9 @@ import { UserRole } from '../users/entities/user.entity';
 import { PipelineStage } from './enums/pipeline-stage.enum';
 import { ActivationService } from '../activation/activation.service';
 import { ActivationActionType } from '../users/enums/activation-action-type.enum';
+import { TransactionService } from '../common/services/transaction.service';
+import { TransitionEventService } from '../flowbar/services/transition-event.service';
+import { TransitionEventType } from '../flowbar/enums/transition-event-type.enum';
 
 @Injectable()
 export class ContactsService {
@@ -20,22 +23,57 @@ export class ContactsService {
     @InjectRepository(Contact)
     private readonly contactRepository: Repository<Contact>,
     private readonly activationService: ActivationService,
+    private readonly transactionService: TransactionService,
+    private readonly transitionEventService: TransitionEventService,
   ) {}
 
+  /**
+   * Create a new contact and emit lead_created transition event
+   *
+   * Operations (all atomic within transaction):
+   * 1. Create contact record
+   * 2. Create lead_created transition event
+   *
+   * After transaction commits:
+   * 3. Push event to SQS queue (fire-and-forget)
+   * 4. Trigger activation check (fire-and-forget)
+   */
   async create(
     userId: string,
     createContactDto: CreateContactDto,
   ): Promise<Contact> {
-    const contact = this.contactRepository.create({
-      ...createContactDto,
-      userId,
-      status: createContactDto.status || 'active',
-      lastActivityAt: new Date(),
-    });
+    // Wrap contact creation + transition event in a transaction
+    const { savedContact, transitionEvent } =
+      await this.transactionService.runInTransaction(async (manager) => {
+        // Create and save contact
+        const contactRepo = manager.getRepository(Contact);
+        const contact = contactRepo.create({
+          ...createContactDto,
+          userId,
+          status: createContactDto.status || 'active',
+          lastActivityAt: new Date(),
+        });
+        const savedContact = await contactRepo.save(contact);
 
-    const savedContact = await this.contactRepository.save(contact);
+        // Create lead_created transition event
+        const transitionEvent = await this.transitionEventService.create(
+          {
+            contactId: savedContact.id,
+            userId,
+            eventType: TransitionEventType.LEAD_CREATED,
+            source: 'agent',
+          },
+          manager,
+        );
 
-    // Trigger activation when agent creates their first contact
+        return { savedContact, transitionEvent };
+      });
+
+    // Push event to SQS OUTSIDE transaction (fire-and-forget pattern)
+    // SQS failures should not rollback the database transaction
+    await this.transitionEventService.pushToQueue(transitionEvent);
+
+    // Trigger activation when agent creates their first contact (fire-and-forget)
     await this.activationService.triggerActivation(
       userId,
       ActivationActionType.CONTACT_CREATED,

@@ -186,6 +186,7 @@ export class AuthService {
         expiresIn: authResponse.AuthenticationResult.ExpiresIn!,
       };
     } catch (error: any) {
+      console.log('[AUTHService - Loign]', error);
       if (
         error.name === 'NotAuthorizedException' ||
         error.name === 'UserNotFoundException'

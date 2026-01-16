@@ -12,7 +12,7 @@ export class S3Service {
     const isDevelopment = process.env.NODE_ENV === 'development';
 
     this.s3Client = new S3Client({
-      region: process.env.AWS_REGION || 'us-east-2',
+      region: process.env.AWS_REGION || 'us-east-1',
       ...(isDevelopment && {
         credentials: {
           accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
@@ -160,6 +160,6 @@ export class S3Service {
    * @returns Public URL
    */
   getPublicUrl(key: string): string {
-    return `https://${this.bucketName}.s3.${process.env.AWS_REGION || 'us-east-2'}.amazonaws.com/${key}`;
+    return `https://${this.bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
   }
 }

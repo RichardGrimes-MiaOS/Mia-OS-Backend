@@ -64,6 +64,7 @@ export function getRoleBaseline(
 ): ActionKey[] {
   switch (role) {
     case UserRole.AGENT:
+    case UserRole.APPLICANT:
       return isLicensed ? AGENT_LICENSED_BASELINE : AGENT_UNLICENSED_BASELINE;
 
     case UserRole.AFFILIATE_ONLY:

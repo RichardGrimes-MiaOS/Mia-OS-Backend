@@ -60,7 +60,7 @@ export class EmailService {
     // In development: use 'mia' AWS profile
     // In production (ECS): use IAM roles (no credentials needed)
     this.sesClient = new SESClient({
-      region: process.env.AWS_REGION || 'us-east-2',
+      region: process.env.AWS_REGION || 'us-east-1',
       ...(isDevelopment && {
         credentials: {
           accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
@@ -72,7 +72,7 @@ export class EmailService {
     this.fromEmail = process.env.SES_FROM_EMAIL!;
 
     console.log(
-      `[EmailService] Initialized with ${isDevelopment ? 'local credentials' : 'IAM role'} in ${process.env.AWS_REGION || 'us-east-2'}`,
+      `[EmailService] Initialized with ${isDevelopment ? 'local credentials' : 'IAM role'} in ${process.env.AWS_REGION || 'us-east-1'}`,
     );
   }
 

@@ -44,7 +44,8 @@ export class FlowbarController {
   @ApiQuery({
     name: 'context',
     required: false,
-    description: 'UI context for the request (e.g., "dashboard", "mobile_home")',
+    description:
+      'UI context for the request (e.g., "dashboard", "mobile_home")',
     example: 'dashboard',
   })
   @ApiResponse({

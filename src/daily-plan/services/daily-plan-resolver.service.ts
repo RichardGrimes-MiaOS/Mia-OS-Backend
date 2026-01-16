@@ -5,12 +5,22 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, Not } from 'typeorm';
-import { User, UserRole, OnboardingStatus } from '../../users/entities/user.entity';
+import {
+  User,
+  UserRole,
+  OnboardingStatus,
+} from '../../users/entities/user.entity';
 import { UserOnboardingStep } from '../../onboarding/entities/user-onboarding-step.entity';
 import { LicensedAgentIntake } from '../../onboarding/entities/licensed-agent-intake.entity';
-import { UserEvent, EventType } from '../../analytics/entities/user-event.entity';
+import {
+  UserEvent,
+  EventType,
+} from '../../analytics/entities/user-event.entity';
 import { ActionKey } from '../enums/action-key.enum';
-import { getRoleBaseline, ACTION_PREREQUISITES } from '../config/role-baseline-config';
+import {
+  getRoleBaseline,
+  ACTION_PREREQUISITES,
+} from '../config/role-baseline-config';
 
 export interface DailyPlanResponse {
   required_actions: ActionKey[];
@@ -55,8 +65,18 @@ export class DailyPlanResolverService {
     // 2. Detect completed actions from database state
     const completedActions = await this.detectCompletedActions(user);
 
+    console.log(
+      '[DailyPlanResolverService] Completed actions: ',
+      completedActions,
+    );
+
     // 3. Get role baseline (static lookup)
     const baselineActions = getRoleBaseline(user.role, user.isLicensed);
+
+    console.log(
+      '[DailyPlanResolverService] Baseline actions: ',
+      baselineActions,
+    );
 
     // 4. Apply state filters to determine required actions
     const requiredActions = this.applyStateFilters(
@@ -65,14 +85,29 @@ export class DailyPlanResolverService {
       user,
     );
 
+    console.log(
+      '[DailyPlanResolverService] Required actions: ',
+      requiredActions,
+    );
+
     // 5. Calculate progress percentage
     const progressPercent = this.calculateProgress(
       completedActions,
       requiredActions,
     );
 
+    console.log(
+      '[DailyPlanResolverService] Progress percentage: ',
+      progressPercent,
+    );
+
     // 6. Next required action key (Phase 1: null)
     const nextRequiredActionKey = null;
+
+    console.log(
+      '[DailyPlanResolverService] Next required action key: ',
+      nextRequiredActionKey,
+    );
 
     return {
       required_actions: requiredActions,
@@ -135,7 +170,10 @@ export class DailyPlanResolverService {
     }
 
     // 5. Check first share (referral clicked event exists)
-    if (user.role === UserRole.AFFILIATE_ONLY || user.role === UserRole.AFFILIATE) {
+    if (
+      user.role === UserRole.AFFILIATE_ONLY ||
+      user.role === UserRole.AFFILIATE
+    ) {
       const firstShareEvent = await this.userEventRepository.findOne({
         where: {
           affiliate_id: user.id,
@@ -195,7 +233,10 @@ export class DailyPlanResolverService {
     // Keep only actions whose prerequisites are completed
     // Context-aware: licensed vs unlicensed agents have different chains
     requiredActions = requiredActions.filter((action) => {
-      const prerequisite = this.getPrerequisiteForAction(action, user.isLicensed);
+      const prerequisite = this.getPrerequisiteForAction(
+        action,
+        user.isLicensed,
+      );
 
       // No prerequisite → always required
       if (!prerequisite) return true;
@@ -230,8 +271,8 @@ export class DailyPlanResolverService {
     // Special case: e&o_uploaded has different prerequisites based on license status
     if (action === ActionKey.EO_UPLOADED) {
       return isLicensed
-        ? ActionKey.LICENSED_AGENT_INTAKE  // Licensed path
-        : ActionKey.LICENSE_UPLOADED;      // Unlicensed path
+        ? ActionKey.LICENSED_AGENT_INTAKE // Licensed path
+        : ActionKey.LICENSE_UPLOADED; // Unlicensed path
     }
 
     // For all other actions, use static prerequisites

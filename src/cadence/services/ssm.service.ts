@@ -9,7 +9,7 @@ export class SSMService {
 
   constructor(private configService: ConfigService) {
     this.ssmClient = new SSMClient({
-      region: this.configService.get<string>('AWS_REGION') || 'us-east-2',
+      region: this.configService.get<string>('AWS_REGION') || 'us-east-1',
     });
     this.environment =
       this.configService.get<string>('NODE_ENV') || 'development';

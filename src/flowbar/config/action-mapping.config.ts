@@ -39,10 +39,7 @@ export const ACTION_KEY_TO_TYPE: Record<
  * Used for checking if actions are completed
  */
 export const ACTION_TYPE_TO_KEY: Partial<
-  Record<
-    Exclude<ActionType, ActionType.SUPPORTIVE_GUIDANCE>,
-    ActionKey
-  >
+  Record<Exclude<ActionType, ActionType.SUPPORTIVE_GUIDANCE>, ActionKey>
 > = {
   [ActionType.SCHEDULE_EXAM]: ActionKey.EXAM_SCHEDULED,
   [ActionType.UPLOAD_LICENSE]: ActionKey.LICENSE_UPLOADED,
