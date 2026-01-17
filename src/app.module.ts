@@ -25,6 +25,7 @@ import { AffiliateUserPerformance } from './affiliates/entities/affiliate-user-p
 import { AffiliateVisitor } from './affiliates/entities/affiliate-visitor.entity';
 import { UserOnboardingStep } from './onboarding/entities/user-onboarding-step.entity';
 import { UserEvent } from './analytics/entities/user-event.entity';
+import { TransitionEvent } from './flowbar/entities/transition-event.entity';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -83,6 +84,7 @@ import { CommonModule } from './common/common.module';
         RhythmStateSnapshot,
         UserDailyPlan,
         ActionRecommendation,
+        TransitionEvent,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging:

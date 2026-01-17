@@ -61,7 +61,7 @@ export class ContactsService {
             contactId: savedContact.id,
             userId,
             eventType: TransitionEventType.LEAD_CREATED,
-            source: 'agent',
+            source: 'system',
           },
           manager,
         );
