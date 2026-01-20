@@ -28,29 +28,6 @@ import { ListUsersQueryDto } from './dto/list-users-query.dto';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Get()
-  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
-  @ApiOperation({
-    summary: 'Get all users with pagination (Admin only)',
-    description: 'Retrieve paginated list of all users ordered by creation date',
-  })
-  @ApiResponse({
-    status: 200,
-    description:
-      'Users retrieved successfully - returns { users, total, limit, offset }',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - JWT token missing or invalid',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Admin role required',
-  })
-  async getAllUsers(@Query() query: GetUsersQueryDto) {
-    const { limit = 100, offset = 0 } = query;
-    return await this.usersService.findAll(limit, offset);
-  }
 
   @Get('profile')
   @Roles(UserRole.AGENT)
@@ -80,7 +57,7 @@ export class UsersController {
     return await this.usersService.getAgentProfile(user.id);
   }
 
-  @Get('all')
+  @Get()
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Get all users with onboarding details (Admin only)',
