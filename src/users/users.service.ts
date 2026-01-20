@@ -59,7 +59,10 @@ export class UsersService {
   }
 
   /**
-   * Update user role
+   * Update user role in both database and Cognito
+   *
+   * Important: This method updates the role in both systems to keep them in sync.
+   * The Cognito custom:role attribute is used for JWT token claims and authorization.
    *
    * @param userId - User ID to update
    * @param role - New role to set
@@ -70,8 +73,27 @@ export class UsersService {
     role: UserRole,
     manager?: EntityManager,
   ): Promise<void> {
+    // Get user to retrieve email for Cognito update
     const repo = manager ? manager.getRepository(User) : this.userRepository;
+    const user = await repo.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Update database
     await repo.update(userId, { role });
+
+    // Update Cognito custom:role attribute to keep JWT tokens in sync
+    // Note: This is outside the DB transaction, but role updates are idempotent
+    // and the Cognito state will be correct even if called multiple times
+    await this.cognitoService.adminUpdateUserAttributes(user.email, [
+      { Name: 'custom:role', Value: role },
+    ]);
+
+    console.log(
+      `[UsersService] Updated role for user ${userId} to ${role} in both database and Cognito`,
+    );
   }
 
   /**
