@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Query,
+  Param,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -11,6 +12,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiParam,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -60,32 +62,27 @@ export class UsersController {
   @Get()
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({
-    summary: 'Get all users with onboarding details (Admin only)',
+    summary: 'Get all users with minimal fields for table view (Admin only)',
     description: `
-Retrieve paginated list of all users with their onboarding status and details.
+Retrieve paginated list of all users with basic info for table display. Excludes admin and super-admin users.
 
 **Filters:**
-- \`role\`: Filter by user role (applicant, agent, affiliate, affiliate_only, admin, super-admin)
+- \`role\`: Filter by user role (applicant, agent, affiliate, affiliate_only)
 - \`status\`: Filter by user status (active, inactive, suspended)
 - \`isLicensed\`: Filter by licensing status (true/false)
 - \`onboardingStatus\`: Filter by onboarding status (in_progress, licensed, pending_activation, onboarded)
 
-**Response includes:**
-- Basic user info (id, email, name, phone)
-- Role and status
-- Licensing and onboarding status
-- Timestamps (created, approved, activated)
-- Onboarding details:
-  - Licensing training completion
-  - Licensing exam result and date
-  - E&O insurance upload and expiration
-  - Activation request status
-  - Current onboarding step
+**Response includes minimal fields:**
+- id, email, firstName, lastName
+- role, status, onboardingStatus, activationStatus
+- createdAt
+
+**For full details:** Use GET /users/:id
     `,
   })
   @ApiResponse({
     status: 200,
-    description: 'Users retrieved successfully with onboarding details',
+    description: 'Users list retrieved successfully',
   })
   @ApiResponse({
     status: 401,
@@ -97,5 +94,50 @@ Retrieve paginated list of all users with their onboarding status and details.
   })
   async getAdminUsers(@Query() query: ListUsersQueryDto) {
     return await this.usersService.findAllWithOnboarding(query);
+  }
+
+  @Get(':id')
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Get single user with full onboarding details (Admin only)',
+    description: `
+Retrieve complete user information including all onboarding details and documents.
+
+**Response includes:**
+- Full user info (id, email, name, phone)
+- Role, status, licensing, onboarding status
+- Timestamps (created, approved, activated)
+- Complete onboarding details:
+  - Licensing training (completion, registration screenshot)
+  - Licensing exam (result, exam date, result document)
+  - E&O insurance (document path, carrier, policy number, expiration)
+  - Activation request (status, requested date, approved date, approver, notes)
+  - Current onboarding step
+    `,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'User UUID',
+    type: 'string',
+    format: 'uuid',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User details retrieved successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - JWT token missing or invalid',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Admin role required',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'User not found',
+  })
+  async getUserById(@Param('id') id: string) {
+    return await this.usersService.findByIdWithOnboarding(id);
   }
 }

@@ -969,6 +969,75 @@ export class OnboardingService {
     return submissions;
   }
 
+  // ==================== ACTIVATION REQUESTS (ADMIN QUEUE) ====================
+
+  /**
+   * Get all activation requests with optional status filter (Admin only)
+   * Returns list of users pending activation review
+   *
+   * @param status - Filter by activation status (pending, approved, rejected)
+   * @returns List of activation requests with user details
+   */
+  async getActivationRequests(
+    status?: ActivationStatus,
+  ): Promise<
+    Array<{
+      id: string;
+      userId: string;
+      user: {
+        id: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+        phone: string | null;
+        onboardingStatus: string | null;
+      };
+      status: ActivationStatus;
+      emailSentAt: Date;
+      emailSentTo: string;
+      approvedBy: string | null;
+      approvedAt: Date | null;
+      notes: string | null;
+      createdAt: Date;
+    }>
+  > {
+    const queryBuilder = this.activationRequestRepository
+      .createQueryBuilder('ar')
+      .leftJoinAndSelect('ar.user', 'user')
+      .leftJoinAndSelect('ar.approver', 'approver')
+      .orderBy('ar.createdAt', 'DESC');
+
+    // Filter by status if provided
+    if (status) {
+      queryBuilder.andWhere('ar.status = :status', { status });
+    }
+
+    const activationRequests = await queryBuilder.getMany();
+
+    // Map to response format
+    return activationRequests.map((ar) => ({
+      id: ar.id,
+      userId: ar.userId,
+      user: {
+        id: ar.user.id,
+        email: ar.user.email,
+        firstName: ar.user.firstName,
+        lastName: ar.user.lastName,
+        phone: ar.user.phone || null,
+        onboardingStatus: ar.user.onboardingStatus || null,
+      },
+      status: ar.status,
+      emailSentAt: ar.emailSentAt,
+      emailSentTo: ar.emailSentTo,
+      approvedBy: ar.approver
+        ? `${ar.approver.firstName} ${ar.approver.lastName}`
+        : null,
+      approvedAt: ar.approvedAt || null,
+      notes: ar.notes || null,
+      createdAt: ar.createdAt,
+    }));
+  }
+
   // ==================== HELPER METHODS ====================
 
   private async updateUserOnboardingStatus(

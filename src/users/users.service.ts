@@ -11,9 +11,24 @@ import { UserOnboardingStep } from '../onboarding/entities/user-onboarding-step.
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 
 /**
- * Response structure for a single user with onboarding details
+ * Response structure for users list (table view - minimal fields)
  */
-export interface AdminUserResponse {
+export interface AdminUserListResponse {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  status: string;
+  onboardingStatus: string | null;
+  activationStatus: string | null;
+  createdAt: Date;
+}
+
+/**
+ * Response structure for a single user with full onboarding details
+ */
+export interface AdminUserDetailResponse {
   id: string;
   email: string;
   firstName: string;
@@ -49,6 +64,8 @@ export interface AdminUserResponse {
       status: string | null;
       requestedAt: Date | null;
       approvedAt: Date | null;
+      approvedBy: string | null;
+      notes: string | null;
     };
     currentStep: string | null;
   };
@@ -310,13 +327,13 @@ export class UsersService {
   }
 
   /**
-   * Get all users with onboarding details and optional filters (Admin only)
+   * Get all users with minimal fields for table view (Admin only)
    *
    * @param query - Filter and pagination options
-   * @returns Paginated list of users with onboarding details
+   * @returns Paginated list of users with minimal fields
    */
   async findAllWithOnboarding(query: ListUsersQueryDto): Promise<{
-    users: AdminUserResponse[];
+    users: AdminUserListResponse[];
     total: number;
     limit: number;
     offset: number;
@@ -368,101 +385,129 @@ export class UsersService {
 
     const users = await queryBuilder.getMany();
 
-    // Fetch onboarding details for all users in batch
+    // Fetch activation status for all users in batch
     const userIds = users.map((u) => u.id);
 
     if (userIds.length === 0) {
       return { users: [], total, limit, offset };
     }
 
-    // Batch fetch all related onboarding data
-    const [trainings, exams, insurances, activations, steps] =
-      await Promise.all([
-        this.licensingTrainingRepository
-          .createQueryBuilder('lt')
-          .where('lt.userId IN (:...userIds)', { userIds })
-          .getMany(),
-        this.licensingExamRepository
-          .createQueryBuilder('le')
-          .where('le.userId IN (:...userIds)', { userIds })
-          .getMany(),
-        this.eAndOInsuranceRepository
-          .createQueryBuilder('eo')
-          .where('eo.userId IN (:...userIds)', { userIds })
-          .getMany(),
-        this.activationRequestRepository
-          .createQueryBuilder('ar')
-          .where('ar.userId IN (:...userIds)', { userIds })
-          .getMany(),
-        this.onboardingStepRepository
-          .createQueryBuilder('os')
-          .where('os.userId IN (:...userIds)', { userIds })
-          .andWhere('os.completedAt IS NULL') // Current step = not completed
-          .getMany(),
-      ]);
+    // Batch fetch activation requests to get activation status
+    const activations = await this.activationRequestRepository
+      .createQueryBuilder('ar')
+      .where('ar.userId IN (:...userIds)', { userIds })
+      .getMany();
 
-    // Create lookup maps for efficient access
-    const trainingMap = new Map(trainings.map((t) => [t.userId, t]));
-    const examMap = new Map(exams.map((e) => [e.userId, e]));
-    const insuranceMap = new Map(insurances.map((i) => [i.userId, i]));
+    // Create lookup map for activation status
     const activationMap = new Map(activations.map((a) => [a.userId, a]));
-    const stepMap = new Map(steps.map((s) => [s.userId, s]));
 
-    // Map users with onboarding details
-    const usersWithOnboarding: AdminUserResponse[] = users.map((user) => {
-      const training = trainingMap.get(user.id);
-      const exam = examMap.get(user.id);
-      const insurance = insuranceMap.get(user.id);
+    // Map users with minimal fields for table view
+    const usersList: AdminUserListResponse[] = users.map((user) => {
       const activation = activationMap.get(user.id);
-      const currentStep = stepMap.get(user.id);
 
       return {
         id: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        phone: user.phone || null,
         role: user.role,
         status: user.status,
-        isLicensed: user.isLicensed,
         onboardingStatus: user.onboardingStatus || null,
+        activationStatus: activation?.status || null,
         createdAt: user.createdAt,
-        approvedAt: user.approved_at || null,
-        activatedAt: user.activated_at || null,
-        onboarding: {
-          licensingTraining: {
-            completed: training?.isRegistered ?? false,
-            registeredAt: training?.createdAt || null,
-            registrationScreenshot: training?.registrationScreenshot || null,
-          },
-          licensingExam: {
-            completed: exam?.result === 'passed',
-            result: exam?.result || null,
-            examDate: exam?.examDate || null,
-            resultDocument: exam?.resultDocument || null,
-          },
-          eAndOInsurance: {
-            uploaded: insurance != null,
-            expirationDate: insurance?.expirationDate || null,
-            documentPath: insurance?.documentPath || null,
-            carrierName: insurance?.carrierName || null,
-            policyNumber: insurance?.policyNumber || null,
-          },
-          activation: {
-            status: activation?.status || null,
-            requestedAt: activation?.createdAt || null,
-            approvedAt: activation?.approvedAt || null,
-          },
-          currentStep: currentStep?.stepKey || null,
-        },
       };
     });
 
     return {
-      users: usersWithOnboarding,
+      users: usersList,
       total,
       limit,
       offset,
+    };
+  }
+
+  /**
+   * Get single user with full onboarding details (Admin only)
+   *
+   * @param userId - User ID to retrieve
+   * @returns User with complete onboarding details
+   */
+  async findByIdWithOnboarding(
+    userId: string,
+  ): Promise<AdminUserDetailResponse> {
+    // Get user
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Fetch all onboarding details in parallel
+    const [training, exam, insurance, activation, currentStep] =
+      await Promise.all([
+        this.licensingTrainingRepository.findOne({ where: { userId } }),
+        this.licensingExamRepository.findOne({ where: { userId } }),
+        this.eAndOInsuranceRepository.findOne({
+          where: { userId },
+          order: { createdAt: 'DESC' },
+        }),
+        this.activationRequestRepository.findOne({
+          where: { userId },
+          relations: ['approver'],
+        }),
+        this.onboardingStepRepository
+          .createQueryBuilder('step')
+          .where('step.userId = :userId', { userId })
+          .andWhere('step.completedAt IS NULL')
+          .orderBy('step.createdAt', 'DESC')
+          .getOne(),
+      ]);
+
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone || null,
+      role: user.role,
+      status: user.status,
+      isLicensed: user.isLicensed,
+      onboardingStatus: user.onboardingStatus || null,
+      createdAt: user.createdAt,
+      approvedAt: user.approved_at || null,
+      activatedAt: user.activated_at || null,
+      onboarding: {
+        licensingTraining: {
+          completed: training?.isRegistered ?? false,
+          registeredAt: training?.createdAt || null,
+          registrationScreenshot: training?.registrationScreenshot || null,
+        },
+        licensingExam: {
+          completed: exam?.result === 'passed',
+          result: exam?.result || null,
+          examDate: exam?.examDate || null,
+          resultDocument: exam?.resultDocument || null,
+        },
+        eAndOInsurance: {
+          uploaded: insurance != null,
+          expirationDate: insurance?.expirationDate || null,
+          documentPath: insurance?.documentPath || null,
+          carrierName: insurance?.carrierName || null,
+          policyNumber: insurance?.policyNumber || null,
+        },
+        activation: {
+          status: activation?.status || null,
+          requestedAt: activation?.createdAt || null,
+          approvedAt: activation?.approvedAt || null,
+          approvedBy: activation?.approver
+            ? `${activation.approver.firstName} ${activation.approver.lastName}`
+            : null,
+          notes: activation?.notes || null,
+        },
+        currentStep: currentStep?.stepKey || null,
+      },
     };
   }
 }

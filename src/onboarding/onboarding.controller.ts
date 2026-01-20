@@ -5,6 +5,7 @@ import {
   Body,
   Patch,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -16,6 +17,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
 import { S3Service } from './services/s3.service';
@@ -30,6 +32,7 @@ import { PresignedUrlRequestDto } from './dto/presigned-url-request.dto';
 import { PresignedDownloadUrlDto } from './dto/presigned-download-url.dto';
 import { CompleteAffiliateOnboardingDto } from './dto/complete-affiliate-onboarding.dto';
 import { UpdateOnboardingStatusDto } from './dto/update-onboarding-status.dto';
+import { ActivationRequestsQueryDto } from './dto/activation-requests-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -467,6 +470,49 @@ export class OnboardingController {
   }
 
   // ==================== ADMIN ACTIVATION ====================
+
+  @Get('activation-requests')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get activation requests queue (Admin only)',
+    description: `
+Retrieve list of activation requests with optional status filter.
+This is the admin review queue for user activations.
+
+**Query Parameters:**
+- \`status\`: Filter by activation status (pending, approved, rejected)
+
+**Response includes:**
+- Activation request details (id, status, dates, notes)
+- User info (id, email, name, phone, onboarding status)
+- Approver name (if approved/rejected)
+
+**Use case:** Admin dashboard showing pending activations for review
+    `,
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['pending', 'approved', 'rejected'],
+    description: 'Filter by activation status',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Activation requests retrieved successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - JWT token missing or invalid',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Admin role required',
+  })
+  async getActivationRequests(@Query() query: ActivationRequestsQueryDto) {
+    return await this.onboardingService.getActivationRequests(query.status);
+  }
 
   @Post('activate/:userId')
   @UseGuards(RolesGuard)
