@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -161,5 +161,31 @@ export class S3Service {
    */
   getPublicUrl(key: string): string {
     return `https://${this.bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+  }
+
+  /**
+   * Generate pre-signed URL for file download
+   * @param key - S3 object key
+   * @param expiresIn - URL expiration time in seconds (default: 15 minutes)
+   * @returns Pre-signed download URL
+   */
+  async getPresignedDownloadUrl(
+    key: string,
+    expiresIn: number = 900,
+  ): Promise<string> {
+    if (!key) {
+      throw new BadRequestException('S3 key is required');
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+    });
+
+    const downloadUrl = await getSignedUrl(this.s3Client, command, {
+      expiresIn,
+    });
+
+    return downloadUrl;
   }
 }

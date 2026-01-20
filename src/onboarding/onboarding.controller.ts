@@ -27,6 +27,7 @@ import { CreateEAndOInsuranceDto } from './dto/create-e-and-o-insurance.dto';
 import { CreateLicensedAgentIntakeDto } from './dto/create-licensed-agent-intake.dto';
 import { ActivateUserDto } from './dto/activate-user.dto';
 import { PresignedUrlRequestDto } from './dto/presigned-url-request.dto';
+import { PresignedDownloadUrlDto } from './dto/presigned-download-url.dto';
 import { CompleteAffiliateOnboardingDto } from './dto/complete-affiliate-onboarding.dto';
 import { UpdateOnboardingStatusDto } from './dto/update-onboarding-status.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -78,6 +79,42 @@ export class OnboardingController {
       key,
       message:
         'Upload your file to the provided URL using PUT request with the file as binary data',
+    };
+  }
+
+  @Post('download/presigned-url')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Generate presigned URL for S3 download (Admin only)',
+    description:
+      'Generate a presigned URL for downloading files from S3. The URL is valid for 15 minutes. Use GET request to download the file.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Presigned download URL generated successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad Request - S3 key is required',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - JWT token missing or invalid',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Admin role required',
+  })
+  async getPresignedDownloadUrl(@Body() dto: PresignedDownloadUrlDto) {
+    const downloadUrl = await this.s3Service.getPresignedDownloadUrl(dto.key);
+
+    return {
+      downloadUrl,
+      key: dto.key,
+      expiresIn: 900,
+      message: 'Use GET request to download the file from the provided URL',
     };
   }
 

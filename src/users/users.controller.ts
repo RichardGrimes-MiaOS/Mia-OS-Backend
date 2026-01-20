@@ -19,6 +19,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User, UserRole } from './entities/user.entity';
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -77,5 +78,47 @@ export class UsersController {
   })
   async getAgentProfile(@CurrentUser() user: User) {
     return await this.usersService.getAgentProfile(user.id);
+  }
+
+  @Get('all')
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Get all users with onboarding details (Admin only)',
+    description: `
+Retrieve paginated list of all users with their onboarding status and details.
+
+**Filters:**
+- \`role\`: Filter by user role (applicant, agent, affiliate, affiliate_only, admin, super-admin)
+- \`status\`: Filter by user status (active, inactive, suspended)
+- \`isLicensed\`: Filter by licensing status (true/false)
+- \`onboardingStatus\`: Filter by onboarding status (in_progress, licensed, pending_activation, onboarded)
+
+**Response includes:**
+- Basic user info (id, email, name, phone)
+- Role and status
+- Licensing and onboarding status
+- Timestamps (created, approved, activated)
+- Onboarding details:
+  - Licensing training completion
+  - Licensing exam result and date
+  - E&O insurance upload and expiration
+  - Activation request status
+  - Current onboarding step
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully with onboarding details',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - JWT token missing or invalid',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Admin role required',
+  })
+  async getAdminUsers(@Query() query: ListUsersQueryDto) {
+    return await this.usersService.findAllWithOnboarding(query);
   }
 }

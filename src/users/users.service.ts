@@ -3,12 +3,72 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, EntityManager } from 'typeorm';
 import { User, UserRole, UserStatus } from './entities/user.entity';
 import { CognitoService } from '../cognito/cognito.service';
+import { LicensingTraining } from '../onboarding/entities/licensing-training.entity';
+import { LicensingExam } from '../onboarding/entities/licensing-exam.entity';
+import { EAndOInsurance } from '../onboarding/entities/e-and-o-insurance.entity';
+import { ActivationRequest } from '../onboarding/entities/activation-request.entity';
+import { UserOnboardingStep } from '../onboarding/entities/user-onboarding-step.entity';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
+
+/**
+ * Response structure for a single user with onboarding details
+ */
+export interface AdminUserResponse {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  role: string;
+  status: string;
+  isLicensed: boolean;
+  onboardingStatus: string | null;
+  createdAt: Date;
+  approvedAt: Date | null;
+  activatedAt: Date | null;
+  onboarding: {
+    licensingTraining: {
+      completed: boolean;
+      registeredAt: Date | null;
+      registrationScreenshot: string | null;
+    };
+    licensingExam: {
+      completed: boolean;
+      result: string | null;
+      examDate: Date | null;
+      resultDocument: string | null;
+    };
+    eAndOInsurance: {
+      uploaded: boolean;
+      expirationDate: Date | null;
+      documentPath: string | null;
+      carrierName: string | null;
+      policyNumber: string | null;
+    };
+    activation: {
+      status: string | null;
+      requestedAt: Date | null;
+      approvedAt: Date | null;
+    };
+    currentStep: string | null;
+  };
+}
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(LicensingTraining)
+    private readonly licensingTrainingRepository: Repository<LicensingTraining>,
+    @InjectRepository(LicensingExam)
+    private readonly licensingExamRepository: Repository<LicensingExam>,
+    @InjectRepository(EAndOInsurance)
+    private readonly eAndOInsuranceRepository: Repository<EAndOInsurance>,
+    @InjectRepository(ActivationRequest)
+    private readonly activationRequestRepository: Repository<ActivationRequest>,
+    @InjectRepository(UserOnboardingStep)
+    private readonly onboardingStepRepository: Repository<UserOnboardingStep>,
     private cognitoService: CognitoService,
   ) {}
 
@@ -246,6 +306,163 @@ export class UsersService {
             email: user.createdBy.email,
           }
         : null,
+    };
+  }
+
+  /**
+   * Get all users with onboarding details and optional filters (Admin only)
+   *
+   * @param query - Filter and pagination options
+   * @returns Paginated list of users with onboarding details
+   */
+  async findAllWithOnboarding(query: ListUsersQueryDto): Promise<{
+    users: AdminUserResponse[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const {
+      role,
+      status,
+      isLicensed,
+      onboardingStatus,
+      limit = 50,
+      offset = 0,
+    } = query;
+
+    // Build query with filters
+    const queryBuilder = this.userRepository.createQueryBuilder('user');
+
+    // Always exclude admin and super-admin users from results
+    queryBuilder.andWhere('user.role NOT IN (:...excludedRoles)', {
+      excludedRoles: [UserRole.ADMIN, UserRole.SUPER_ADMIN],
+    });
+
+    // If role filter is provided, only allow non-admin roles
+    if (role && role !== UserRole.ADMIN && role !== UserRole.SUPER_ADMIN) {
+      queryBuilder.andWhere('user.role = :role', { role });
+    }
+
+    if (status) {
+      queryBuilder.andWhere('user.status = :status', { status });
+    }
+
+    if (isLicensed !== undefined) {
+      queryBuilder.andWhere('user.isLicensed = :isLicensed', { isLicensed });
+    }
+
+    if (onboardingStatus) {
+      queryBuilder.andWhere('user.onboardingStatus = :onboardingStatus', {
+        onboardingStatus,
+      });
+    }
+
+    // Get total count before pagination
+    const total = await queryBuilder.getCount();
+
+    // Apply pagination and ordering
+    queryBuilder
+      .orderBy('user.createdAt', 'DESC')
+      .skip(offset)
+      .take(limit);
+
+    const users = await queryBuilder.getMany();
+
+    // Fetch onboarding details for all users in batch
+    const userIds = users.map((u) => u.id);
+
+    if (userIds.length === 0) {
+      return { users: [], total, limit, offset };
+    }
+
+    // Batch fetch all related onboarding data
+    const [trainings, exams, insurances, activations, steps] =
+      await Promise.all([
+        this.licensingTrainingRepository
+          .createQueryBuilder('lt')
+          .where('lt.userId IN (:...userIds)', { userIds })
+          .getMany(),
+        this.licensingExamRepository
+          .createQueryBuilder('le')
+          .where('le.userId IN (:...userIds)', { userIds })
+          .getMany(),
+        this.eAndOInsuranceRepository
+          .createQueryBuilder('eo')
+          .where('eo.userId IN (:...userIds)', { userIds })
+          .getMany(),
+        this.activationRequestRepository
+          .createQueryBuilder('ar')
+          .where('ar.userId IN (:...userIds)', { userIds })
+          .getMany(),
+        this.onboardingStepRepository
+          .createQueryBuilder('os')
+          .where('os.userId IN (:...userIds)', { userIds })
+          .andWhere('os.completedAt IS NULL') // Current step = not completed
+          .getMany(),
+      ]);
+
+    // Create lookup maps for efficient access
+    const trainingMap = new Map(trainings.map((t) => [t.userId, t]));
+    const examMap = new Map(exams.map((e) => [e.userId, e]));
+    const insuranceMap = new Map(insurances.map((i) => [i.userId, i]));
+    const activationMap = new Map(activations.map((a) => [a.userId, a]));
+    const stepMap = new Map(steps.map((s) => [s.userId, s]));
+
+    // Map users with onboarding details
+    const usersWithOnboarding: AdminUserResponse[] = users.map((user) => {
+      const training = trainingMap.get(user.id);
+      const exam = examMap.get(user.id);
+      const insurance = insuranceMap.get(user.id);
+      const activation = activationMap.get(user.id);
+      const currentStep = stepMap.get(user.id);
+
+      return {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone || null,
+        role: user.role,
+        status: user.status,
+        isLicensed: user.isLicensed,
+        onboardingStatus: user.onboardingStatus || null,
+        createdAt: user.createdAt,
+        approvedAt: user.approved_at || null,
+        activatedAt: user.activated_at || null,
+        onboarding: {
+          licensingTraining: {
+            completed: training?.isRegistered ?? false,
+            registeredAt: training?.createdAt || null,
+            registrationScreenshot: training?.registrationScreenshot || null,
+          },
+          licensingExam: {
+            completed: exam?.result === 'passed',
+            result: exam?.result || null,
+            examDate: exam?.examDate || null,
+            resultDocument: exam?.resultDocument || null,
+          },
+          eAndOInsurance: {
+            uploaded: insurance != null,
+            expirationDate: insurance?.expirationDate || null,
+            documentPath: insurance?.documentPath || null,
+            carrierName: insurance?.carrierName || null,
+            policyNumber: insurance?.policyNumber || null,
+          },
+          activation: {
+            status: activation?.status || null,
+            requestedAt: activation?.createdAt || null,
+            approvedAt: activation?.approvedAt || null,
+          },
+          currentStep: currentStep?.stepKey || null,
+        },
+      };
+    });
+
+    return {
+      users: usersWithOnboarding,
+      total,
+      limit,
+      offset,
     };
   }
 }
