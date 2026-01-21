@@ -153,6 +153,10 @@ export class EmailService {
 
   /**
    * Replace template variables with actual values
+   *
+   * Uses a function callback for replacement to avoid issues with special
+   * regex replacement patterns ($&, $`, $', $n) in the value string.
+   * This is critical for passwords which may contain $ characters.
    */
   private replaceTemplateVariables(
     template: string,
@@ -161,7 +165,8 @@ export class EmailService {
     let result = template;
     for (const [key, value] of Object.entries(variables)) {
       const regex = new RegExp(`{{${key}}}`, 'g');
-      result = result.replace(regex, value);
+      // Use function callback to avoid special replacement pattern interpretation
+      result = result.replace(regex, () => value);
     }
     return result;
   }
@@ -236,6 +241,7 @@ You're receiving this email because you submitted an application on our website.
 
       await this.sesClient.send(command);
       console.log(`Welcome email sent to ${data.email}`);
+      console.log(`[DEV] Temporary password for ${data.email}: ${data.temporaryPassword}`);
     } catch (error) {
       console.error('Failed to send welcome email via SES:', error);
       // Don't throw error - log for monitoring
