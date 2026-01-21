@@ -43,8 +43,8 @@ export class Applicant {
   @Column({ type: 'varchar', length: 100 })
   primaryState: string;
 
-  @Column({ type: 'text' })
-  purpose: string;
+  @Column({ type: 'text', nullable: true })
+  purpose?: string;
 
   @Column({
     type: 'enum',

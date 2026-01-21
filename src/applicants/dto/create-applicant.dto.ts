@@ -78,13 +78,12 @@ export class CreateApplicantDto {
   @MaxLength(100)
   primaryState: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Purpose or reason for applying',
-    example: 'Looking to expand insurance business and join the agency network',
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  purpose: string;
+  purpose?: string;
 
   @ApiProperty({
     enum: RoleIntent,
