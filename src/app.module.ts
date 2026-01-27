@@ -18,6 +18,8 @@ import { ActivationRequest } from './onboarding/entities/activation-request.enti
 import { LicensedAgentIntake } from './onboarding/entities/licensed-agent-intake.entity';
 import { License } from './onboarding/entities/license.entity';
 import { Contact } from './contacts/entities/contact.entity';
+import { PipelineStage } from './contacts/entities/pipeline-stage.entity';
+import { PipelineHistory } from './contacts/entities/pipeline-history.entity';
 import { Task } from './tasks/entities/task.entity';
 import { AffiliateProfile } from './affiliates/entities/affiliate-profile.entity';
 import { AffiliateEvents } from './affiliates/entities/affiliate-events.entity';
@@ -73,6 +75,8 @@ import { CommonModule } from './common/common.module';
         LicensedAgentIntake,
         License,
         Contact,
+        PipelineStage,
+        PipelineHistory,
         Task,
         AffiliateProfile,
         AffiliateEvents,

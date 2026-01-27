@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FlowbarController } from './flowbar.controller';
 import { BestNextActionResolver } from './services/best-next-action-resolver.service';
@@ -9,6 +9,7 @@ import { User } from '../users/entities/user.entity';
 import { Contact } from '../contacts/entities/contact.entity';
 import { DailyPlanModule } from '../daily-plan/daily-plan.module';
 import { CadenceModule } from '../cadence/cadence.module';
+import { ContactsModule } from '../contacts/contacts.module';
 
 /**
  * FlowbarModule
@@ -27,6 +28,7 @@ import { CadenceModule } from '../cadence/cadence.module';
     TypeOrmModule.forFeature([ActionRecommendation, TransitionEvent, User, Contact]),
     DailyPlanModule, // Provides DailyPlanResolverService
     CadenceModule, // Provides SSMService
+    forwardRef(() => ContactsModule), // Provides PipelineStageService
   ],
   controllers: [FlowbarController],
   providers: [BestNextActionResolver, TransitionEventService],

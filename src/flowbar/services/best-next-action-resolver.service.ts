@@ -7,7 +7,7 @@ import { Contact } from '../../contacts/entities/contact.entity';
 import { User } from '../../users/entities/user.entity';
 import { DailyPlanResolverService } from '../../daily-plan/services/daily-plan-resolver.service';
 import { SSMService } from '../../cadence/services/ssm.service';
-import { PipelineStage } from '../../contacts/enums/pipeline-stage.enum';
+import { PipelineStageService } from '../../contacts/services/pipeline-stage.service';
 import {
   ACTION_KEY_TO_TYPE,
   ACTION_TYPE_TO_KEY,
@@ -41,6 +41,7 @@ export class BestNextActionResolver {
     private readonly contactRepository: Repository<Contact>,
     private readonly dailyPlanResolver: DailyPlanResolverService,
     private readonly ssmService: SSMService,
+    private readonly pipelineStageService: PipelineStageService,
   ) {}
 
   /**
@@ -81,7 +82,7 @@ export class BestNextActionResolver {
    * Gathers all potentially valid actions from multiple sources:
    * - UserDailyPlan required_actions (mapped to ActionTypes)
    * - System blockers (license, E&O, activation)
-   * - OPS actions (contacts in FOLLOW_UP stage)
+   * - OPS actions (contacts in "contacted" stage needing follow-up)
    *
    * @param userId - User ID
    * @param context - UI context (metadata only)
@@ -120,12 +121,16 @@ export class BestNextActionResolver {
     // (e.g., license_uploaded, e&o_uploaded, activation_unlocked)
     // No additional blocker logic needed
 
-    // 1C. Query contacts in FOLLOW_UP stage for OPS actions
+    // 1C. Query contacts in "contacted" stage for OPS actions
+    // (old FOLLOW_UP enum maps to new "contacted" stage)
+    const contactedStage =
+      await this.pipelineStageService.findByKey('contacted');
     const followUpContacts = await this.contactRepository.find({
       where: {
         userId,
-        pipelineStage: PipelineStage.FOLLOW_UP,
+        currentPipelineStageId: contactedStage.id,
       },
+      relations: ['currentPipelineStage'],
       order: {
         lastActivityAt: 'ASC', // Oldest activity first (needs follow-up most)
       },

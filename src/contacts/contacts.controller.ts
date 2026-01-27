@@ -19,18 +19,18 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
-  ApiBody,
 } from '@nestjs/swagger';
 import { ContactsService } from './contacts.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { FilterContactDto } from './dto/filter-contact.dto';
+import { UpdateContactPipelineStageDto } from './dto/update-contact-pipeline-stage.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User, UserRole } from '../users/entities/user.entity';
-import { PipelineStage } from './enums/pipeline-stage.enum';
+import { PipelineHistoryService } from './services/pipeline-history.service';
 
 @ApiTags('contacts')
 @ApiBearerAuth()
@@ -38,7 +38,10 @@ import { PipelineStage } from './enums/pipeline-stage.enum';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.AGENT, UserRole.ADMIN, UserRole.SUPER_ADMIN)
 export class ContactsController {
-  constructor(private readonly contactsService: ContactsService) {}
+  constructor(
+    private readonly contactsService: ContactsService,
+    private readonly pipelineHistoryService: PipelineHistoryService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -203,7 +206,7 @@ export class ContactsController {
   @ApiOperation({
     summary: 'Update contact pipeline stage',
     description:
-      'Update the pipeline stage of a contact. Agents can only update their own contacts, admins can update all contacts.',
+      'Update the pipeline stage of a contact. Records change history. Agents can only update their own contacts, admins can update all contacts.',
   })
   @ApiParam({
     name: 'id',
@@ -211,22 +214,13 @@ export class ContactsController {
     type: 'string',
     format: 'uuid',
   })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        pipelineStage: {
-          type: 'string',
-          enum: Object.values(PipelineStage),
-          example: PipelineStage.IN_PROGRESS,
-        },
-      },
-      required: ['pipelineStage'],
-    },
-  })
   @ApiResponse({
     status: 200,
     description: 'Contact pipeline stage updated successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad Request - Invalid stage ID or inactive stage',
   })
   @ApiResponse({
     status: 401,
@@ -238,18 +232,58 @@ export class ContactsController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Not Found - Contact not found',
+    description: 'Not Found - Contact or stage not found',
   })
   async updateStage(
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('pipelineStage') pipelineStage: PipelineStage,
+    @Body() dto: UpdateContactPipelineStageDto,
   ) {
     return this.contactsService.updatePipelineStage(
       id,
       user.id,
       user.role,
-      pipelineStage,
+      dto.stageId,
+      dto.changedBy || 'user',
+      dto.reason || 'manual',
+      dto.metadata,
     );
+  }
+
+  @Get(':id/history')
+  @ApiOperation({
+    summary: 'Get pipeline stage change history for contact',
+    description:
+      'Retrieve complete timeline of pipeline stage changes for a contact. Returns chronological history with stage details.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Contact UUID',
+    type: 'string',
+    format: 'uuid',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Pipeline history retrieved successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - JWT token missing or invalid',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - No permission to access this contact',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Not Found - Contact not found',
+  })
+  async getStageHistory(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    // Validate access to contact first
+    await this.contactsService.findOne(id, user.id, user.role);
+    return this.pipelineHistoryService.getContactHistory(id);
   }
 }

@@ -18,7 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "create-super-admin": "ts-node -r tsconfig-paths/register src/scripts/create-super-admin.ts"
+    "create-super-admin": "ts-node -r tsconfig-paths/register src/scripts/create-super-admin.ts",
+    "seed:pipeline-stages": "ts-node -r tsconfig-paths/register src/scripts/seed-pipeline-stages.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.943.0",

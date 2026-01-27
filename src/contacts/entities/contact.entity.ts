@@ -10,12 +10,12 @@ import {
   OneToMany,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
-import { PipelineStage } from '../enums/pipeline-stage.enum';
+import { PipelineStage } from './pipeline-stage.entity';
 
 @Entity('contacts')
 @Index(['userId'])
-@Index(['pipelineStage'])
-@Index(['userId', 'pipelineStage'])
+@Index(['currentPipelineStageId'])
+@Index(['userId', 'currentPipelineStageId'])
 export class Contact {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -39,12 +39,23 @@ export class Contact {
   @Column({ type: 'varchar', length: 50, default: 'active' })
   status: string;
 
-  @Column({
-    type: 'enum',
-    enum: PipelineStage,
-    default: PipelineStage.NEW,
-  })
-  pipelineStage: PipelineStage;
+  /**
+   * Current pipeline stage (FK to PipelineStage)
+   * Replaces old enum column with database-driven stage
+   */
+  @Column({ type: 'uuid' })
+  currentPipelineStageId: string;
+
+  @ManyToOne(() => PipelineStage)
+  @JoinColumn({ name: 'currentPipelineStageId' })
+  currentPipelineStage: PipelineStage;
+
+  /**
+   * Timestamp of last pipeline stage change
+   * Enables tracking stage change frequency and recency
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  pipelineUpdatedAt?: Date;
 
   @Column({ type: 'timestamp', nullable: true })
   lastActivityAt?: Date;

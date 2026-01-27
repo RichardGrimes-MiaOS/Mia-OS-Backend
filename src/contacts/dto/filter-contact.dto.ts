@@ -1,17 +1,23 @@
-import { IsEnum, IsOptional, IsString, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { PipelineStage } from '../enums/pipeline-stage.enum';
 
 export class FilterContactDto {
   @ApiPropertyOptional({
-    enum: PipelineStage,
-    description: 'Filter by pipeline stage',
-    example: PipelineStage.IN_PROGRESS,
+    description: 'Filter by pipeline stage ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @IsOptional()
-  @IsEnum(PipelineStage)
-  pipelineStage?: PipelineStage;
+  @IsUUID()
+  pipelineStageId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by pipeline stage key (e.g., "contacted", "in_progress")',
+    example: 'contacted',
+  })
+  @IsOptional()
+  @IsString()
+  pipelineStageKey?: string;
 
   @ApiPropertyOptional({
     description: 'Filter by status',

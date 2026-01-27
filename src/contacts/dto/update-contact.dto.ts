@@ -1,16 +1,10 @@
 import { PartialType } from '@nestjs/swagger';
 import { CreateContactDto } from './create-contact.dto';
-import { IsEnum, IsOptional } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { PipelineStage } from '../enums/pipeline-stage.enum';
 
-export class UpdateContactDto extends PartialType(CreateContactDto) {
-  @ApiPropertyOptional({
-    enum: PipelineStage,
-    description: 'Contact pipeline stage',
-    example: PipelineStage.IN_PROGRESS,
-  })
-  @IsOptional()
-  @IsEnum(PipelineStage)
-  pipelineStage?: PipelineStage;
-}
+/**
+ * DTO for updating contact information
+ *
+ * Note: Pipeline stage updates use dedicated endpoint PATCH /contacts/:id/stage
+ * This DTO does not include pipeline stage field
+ */
+export class UpdateContactDto extends PartialType(CreateContactDto) {}
